@@ -1,8 +1,11 @@
+VERSION ?= $(shell grep 'var Version' cmd/root.go | head -1 | sed 's/.*"\(.*\)"/\1/')
+LDFLAGS := -ldflags "-X github.com/nerveband/cloak-agent/cmd.Version=$(VERSION)"
+
 .PHONY: build test install clean daemon-build daemon-test cli-build cli-test
 
 # Build everything
 build: daemon-build cli-build
-	@echo "Build complete: ./cloak-agent"
+	@echo "Build complete: ./cloak-agent (v$(VERSION))"
 
 # Run all tests
 test: daemon-test cli-test
@@ -25,10 +28,10 @@ daemon-test:
 
 # CLI targets
 cli-build:
-	go build -o cloak-agent .
+	go build $(LDFLAGS) -o cloak-agent .
 
 cli-test:
-	go test ./cmd/ -v
+	go test ./cmd/... -v
 
 # Development
 dev:

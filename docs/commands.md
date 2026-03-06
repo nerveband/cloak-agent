@@ -234,6 +234,15 @@ cloak-agent profile create myprofile   # Create persistent browser profile
 cloak-agent profile list               # List all profiles
 ```
 
+## Updates
+
+```bash
+cloak-agent upgrade                    # Download and install the latest version
+cloak-agent version                    # Print current version
+```
+
+Update checks run in the background (once per 24 hours) and print a notice after your command finishes. No startup delay, no interruptions.
+
 ## Schema introspection (for AI agents)
 
 ```bash

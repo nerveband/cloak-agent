@@ -7,7 +7,8 @@ npm run build
 cd ..
 
 echo "Building cloak-agent CLI..."
-go build -o cloak-agent .
+VERSION=$(grep 'var Version' cmd/root.go | head -1 | sed 's/.*"\(.*\)"/\1/')
+go build -ldflags "-X github.com/nerveband/cloak-agent/cmd.Version=${VERSION}" -o cloak-agent .
 
 echo ""
 echo "Build complete!"

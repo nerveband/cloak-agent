@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-const Version = "0.1.0"
+var Version = "0.1.0"
 
 func Execute(args []string) error {
 	if len(args) == 0 {
@@ -32,6 +34,24 @@ func Execute(args []string) error {
 	// Handle install subcommand
 	if args[0] == "install" {
 		return handleInstall()
+	}
+
+	// Handle upgrade subcommand
+	if args[0] == "upgrade" {
+		_, err := update.Upgrade(Version)
+		return err
+	}
+
+	// Handle version subcommand
+	if args[0] == "version" {
+		fmt.Printf("cloak-agent v%s\n", Version)
+		return nil
+	}
+
+	// Start async update check for non-meta commands
+	var updateCh <-chan update.CheckResult
+	if update.ShouldCheckUpdates(args) {
+		updateCh = update.CheckAsync(Version)
 	}
 
 	// Parse global flags
@@ -98,12 +118,24 @@ func Execute(args []string) error {
 	// Format and print
 	PrintResponse(resp, flags)
 
+	// Show update notice if available (non-blocking)
+	if updateCh != nil {
+		select {
+		case result := <-updateCh:
+			if notice := update.FormatNotice(result); notice != "" {
+				fmt.Fprint(os.Stderr, notice)
+			}
+		default:
+		}
+	}
+
 	if !resp.Success {
 		os.Exit(1)
 	}
 
 	return nil
 }
+
 
 func generateID() string {
 	b := make([]byte, 4)
@@ -193,6 +225,10 @@ Settings:
 Schema (for AI agents):
   schema                         List all available commands
   schema <command>               Show command parameters
+
+Updates:
+  upgrade                        Upgrade to the latest version
+  version                        Print version
 
 Global Flags:
   --session <name>               Use named session (default: "default")

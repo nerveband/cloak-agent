@@ -157,6 +157,15 @@ cloak-agent profile create shopping      # Persistent browser profile
 cloak-agent profile list                 # List profiles
 ```
 
+### Updates
+
+```bash
+cloak-agent upgrade                 # Self-update to latest release
+cloak-agent version                 # Print current version
+```
+
+The CLI checks for updates in the background (once every 24 hours) and prints a notice after your command finishes. No interruptions, no delays — if an update is available, you'll see a one-liner suggesting `cloak-agent upgrade`.
+
 ### Tabs, cookies, network, and more
 
 ```bash
