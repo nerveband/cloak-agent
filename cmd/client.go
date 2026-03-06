@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -82,9 +81,7 @@ func IsDaemonRunning(session string) bool {
 		return false
 	}
 
-	// Signal 0 checks if the process exists without actually sending a signal.
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil
+	return isProcessAlive(proc)
 }
 
 // findDaemonJS locates daemon.js by searching several candidate paths in order.
@@ -137,9 +134,7 @@ func StartDaemon(session string) error {
 		"CLOAK_AGENT_SESSION="+session,
 	)
 	// Detach the child process so it outlives the CLI.
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	setDetachAttrs(cmd)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
