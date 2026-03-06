@@ -27,14 +27,11 @@ builds:
 
 archives:
   - id: default
-    formats:
-      - tar.gz
-      - zip
-    formats_overrides:
-      - goos: windows
-        formats:
-          - zip
+    format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
 
 checksum:
   name_template: "checksums.txt"
