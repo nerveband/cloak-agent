@@ -1,1 +1,12 @@
-export {};
+export { BrowserManager } from './browser.js';
+export type { BrowserLaunchOptions } from './browser.js';
+export { buildStealthArgs, getDefaultStealthConfig, listProfiles } from './stealth.js';
+export type { StealthOptions, StealthConfig } from './stealth.js';
+export { parseCommand, successResponse, errorResponse, serializeResponse, dumpSchema, dumpAllSchemas } from './protocol.js';
+export type { Command, Response, ParseResult } from './protocol.js';
+export { getEnhancedSnapshot, parseRef, getSnapshotStats } from './snapshot.js';
+export type { RefData, SnapshotOptions, SnapshotStats } from './snapshot.js';
+export { toAIFriendlyError, validateFilePath, sanitizeInput, validateRef } from './errors.js';
+export { StreamServer } from './stream-server.js';
+export { executeCommand } from './actions.js';
+export { startDaemon, getSocketPath, isDaemonRunning, setSession } from './daemon.js';

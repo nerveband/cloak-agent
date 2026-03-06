@@ -63,16 +63,17 @@ export class BrowserManager {
       const userDataDir = ensureProfileDir(options.profile);
       this.isPersistentContext = true;
 
-      const context = await chromium.launchPersistentContext(userDataDir, {
+      const launchOptions: Record<string, unknown> = {
         executablePath,
         args: stealthArgs,
         headless: options.headless ?? true,
         viewport,
         userAgent: options.userAgent,
         proxy: options.proxy ? { server: options.proxy } : undefined,
-        storageState: options.storageState,
         ignoreHTTPSErrors: options.ignoreHTTPSErrors ?? false,
-      });
+      };
+
+      const context = await chromium.launchPersistentContext(userDataDir, launchOptions as any);
 
       this.contexts.push(context);
       const page = context.pages()[0] ?? await context.newPage();
@@ -207,7 +208,7 @@ export class BrowserManager {
     return this.pages.map((page, index) => ({
       index,
       url: page.url(),
-      title: page.title ? page.url() : '', // title() is async, use url as fallback in sync context
+      title: page.url(), // title() is async, use url as sync fallback
     }));
   }
 
