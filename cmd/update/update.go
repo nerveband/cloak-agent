@@ -123,6 +123,11 @@ func Upgrade(currentVersion string) (bool, error) {
 		return false, fmt.Errorf("failed to get executable path: %w", err)
 	}
 
+	// Check write permission before downloading
+	if err := checkWritePermission(exe); err != nil {
+		return false, err
+	}
+
 	if err := updater.UpdateTo(context.Background(), latest, exe); err != nil {
 		return false, fmt.Errorf("failed to update: %w", err)
 	}
@@ -171,6 +176,25 @@ func ShouldCheckUpdates(args []string) bool {
 	return true
 }
 
+// checkWritePermission verifies the binary can be replaced without sudo.
+func checkWritePermission(exePath string) error {
+	dir := filepath.Dir(exePath)
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("cannot access %s: %w", dir, err)
+	}
+	// Check if the directory is writable by opening a temp file
+	tmpFile := filepath.Join(dir, ".cloak-agent-update-test")
+	f, err := os.Create(tmpFile)
+	if err != nil {
+		_ = info // used above
+		return fmt.Errorf("no write permission to %s\nThe binary is at: %s\nEither move it to a user-owned directory or run: sudo cloak-agent upgrade", dir, exePath)
+	}
+	f.Close()
+	os.Remove(tmpFile)
+	return nil
+}
+
 func newUpdater() (*selfupdate.Updater, error) {
 	source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
 	if err != nil {
@@ -182,20 +206,28 @@ func newUpdater() (*selfupdate.Updater, error) {
 	})
 }
 
-func appDir() string {
+func appDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		home = "."
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
-	return filepath.Join(home, ".cloak-agent")
+	return filepath.Join(home, ".cloak-agent"), nil
 }
 
-func cachePath() string {
-	return filepath.Join(appDir(), cacheFile)
+func cachePath() (string, error) {
+	dir, err := appDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, cacheFile), nil
 }
 
 func loadCache() (*Cache, error) {
-	data, err := os.ReadFile(cachePath())
+	path, err := cachePath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -207,13 +239,17 @@ func loadCache() (*Cache, error) {
 }
 
 func saveCache(cache Cache) error {
-	dir := filepath.Dir(cachePath())
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	path, err := cachePath()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(cache, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(cachePath(), data, 0644)
+	return os.WriteFile(path, data, 0600)
 }

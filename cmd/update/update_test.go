@@ -98,6 +98,61 @@ func TestCacheRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCheckWritePermissionWritableDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "cloak-agent")
+	if err := os.WriteFile(tmpFile, []byte("test"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkWritePermission(tmpFile); err != nil {
+		t.Errorf("expected no error for writable dir, got: %v", err)
+	}
+}
+
+func TestCheckWritePermissionReadOnlyDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	roDir := filepath.Join(tmpDir, "readonly")
+	if err := os.MkdirAll(roDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(roDir, 0755) // cleanup
+
+	exePath := filepath.Join(roDir, "cloak-agent")
+	err := checkWritePermission(exePath)
+	if err == nil {
+		t.Error("expected permission error for read-only dir")
+	}
+	if !contains(err.Error(), "no write permission") {
+		t.Errorf("expected 'no write permission' in error, got: %v", err)
+	}
+}
+
+func TestCacheFilePermissions(t *testing.T) {
+	// Save a cache and check that the file is 0600
+	cache := Cache{
+		LastCheck:      time.Now(),
+		LatestVersion:  "1.0.0",
+		UpdateRequired: false,
+	}
+	err := saveCache(cache)
+	if err != nil {
+		t.Fatalf("failed to save cache: %v", err)
+	}
+
+	path, err := cachePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	perm := info.Mode().Perm()
+	if perm != 0600 {
+		t.Errorf("expected cache file permissions 0600, got %04o", perm)
+	}
+}
+
 func TestShouldCheckUpdates(t *testing.T) {
 	tests := []struct {
 		name string
