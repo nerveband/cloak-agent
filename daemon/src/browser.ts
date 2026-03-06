@@ -144,6 +144,14 @@ export class BrowserManager {
     return page;
   }
 
+  getContext(): BrowserContext {
+    const context = this.contexts[this.contexts.length - 1];
+    if (!context) {
+      throw new Error('No browser context available. Call launch() first.');
+    }
+    return context;
+  }
+
   getFrame(): Frame {
     if (this.activeFrame) {
       return this.activeFrame;
