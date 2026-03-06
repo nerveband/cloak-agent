@@ -1,0 +1,12 @@
+# Go
+cloak-agent
+*.exe
+/dist/
+
+# Daemon
+daemon/node_modules/
+daemon/dist/
+daemon/*.tsbuildinfo
+
+# OS
+.DS_Store
