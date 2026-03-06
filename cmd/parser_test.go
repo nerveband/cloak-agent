@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"fmt"
 	"testing"
 )
 
-// helper to assert a key equals an expected value.
+// assertEq checks that m[key] equals want, using fmt.Sprintf for comparison
+// so that int(2) and float64(2) match.
 func assertEq(t *testing.T, m map[string]interface{}, key string, want interface{}) {
 	t.Helper()
 	got, ok := m[key]
@@ -12,108 +14,8 @@ func assertEq(t *testing.T, m map[string]interface{}, key string, want interface
 		t.Errorf("key %q not found in result", key)
 		return
 	}
-	// Numeric comparison: Go json-like maps may use int vs float64.
-	// We compare with %v for simplicity.
-	if fmtVal(got) != fmtVal(want) {
+	if fmt.Sprintf("%v", got) != fmt.Sprintf("%v", want) {
 		t.Errorf("key %q = %v (%T), want %v (%T)", key, got, got, want, want)
-	}
-}
-
-// fmtVal is a tiny helper that formats a value for comparison.
-func fmtVal(v interface{}) string {
-	switch vv := v.(type) {
-	case int:
-		return fmtInt(int64(vv))
-	case int64:
-		return fmtInt(vv)
-	case float64:
-		if vv == float64(int64(vv)) {
-			return fmtInt(int64(vv))
-		}
-		return fmtFloat(vv)
-	case bool:
-		if vv {
-			return "true"
-		}
-		return "false"
-	case string:
-		return vv
-	default:
-		return fmtGeneric(v)
-	}
-}
-
-func fmtInt(v int64) string {
-	return intToStr(v)
-}
-
-func fmtFloat(v float64) string {
-	return floatToStr(v)
-}
-
-func fmtGeneric(v interface{}) string {
-	return genericToStr(v)
-}
-
-// Avoid importing fmt to not shadow the fmt helper above. Use strconv instead.
-func intToStr(v int64) string {
-	buf := make([]byte, 0, 20)
-	if v < 0 {
-		buf = append(buf, '-')
-		v = -v
-	}
-	if v == 0 {
-		return "0"
-	}
-	digits := make([]byte, 0, 20)
-	for v > 0 {
-		digits = append(digits, byte('0'+v%10))
-		v /= 10
-	}
-	for i := len(digits) - 1; i >= 0; i-- {
-		buf = append(buf, digits[i])
-	}
-	return string(buf)
-}
-
-func floatToStr(v float64) string {
-	// Simple float representation; good enough for tests.
-	// Use a basic approach.
-	s := make([]byte, 0, 32)
-	neg := false
-	if v < 0 {
-		neg = true
-		v = -v
-	}
-	intPart := int64(v)
-	fracPart := v - float64(intPart)
-	if neg {
-		s = append(s, '-')
-	}
-	s = append(s, []byte(intToStr(intPart))...)
-	s = append(s, '.')
-	// 6 decimal places
-	for i := 0; i < 6; i++ {
-		fracPart *= 10
-		d := int(fracPart)
-		s = append(s, byte('0'+d))
-		fracPart -= float64(d)
-	}
-	return string(s)
-}
-
-func genericToStr(v interface{}) string {
-	// fallback: just use %v-like behavior via type switch
-	if v == nil {
-		return "<nil>"
-	}
-	return "<non-primitive>"
-}
-
-func assertKey(t *testing.T, m map[string]interface{}, key string) {
-	t.Helper()
-	if _, ok := m[key]; !ok {
-		t.Errorf("expected key %q to be present", key)
 	}
 }
 
