@@ -43,6 +43,88 @@ function dryRun(id: string, description: string): Response {
   return successResponse(id, { dryRun: true, description });
 }
 
+function semanticSubactionNeedsValue(subaction?: string): boolean {
+  return subaction === 'fill' || subaction === 'type' || subaction === 'select';
+}
+
+function semanticActionLabel(
+  subaction: string,
+  subject: string,
+  value?: string,
+): string {
+  switch (subaction) {
+    case 'click':
+      return `Click ${subject}`;
+    case 'dblclick':
+      return `Double-click ${subject}`;
+    case 'fill':
+      return `Fill ${subject}${value ? ` with "${value}"` : ''}`;
+    case 'type':
+      return `Type into ${subject}${value ? `: "${value}"` : ''}`;
+    case 'hover':
+      return `Hover ${subject}`;
+    case 'focus':
+      return `Focus ${subject}`;
+    case 'check':
+      return `Check ${subject}`;
+    case 'uncheck':
+      return `Uncheck ${subject}`;
+    case 'select':
+      return `Select ${subject}${value ? ` -> "${value}"` : ''}`;
+    case 'count':
+      return `Count matches for ${subject}`;
+    default:
+      return `Inspect ${subject}`;
+  }
+}
+
+async function executeSemanticLocatorSubaction(
+  loc: Locator,
+  subaction: string,
+  value?: string,
+): Promise<Record<string, unknown>> {
+  if (semanticSubactionNeedsValue(subaction) && value === undefined) {
+    throw new Error(`Semantic locator subaction "${subaction}" requires a value.`);
+  }
+
+  switch (subaction) {
+    case 'count': {
+      const count = await loc.count();
+      return { count };
+    }
+    case 'click':
+      await loc.click();
+      return { clicked: true };
+    case 'dblclick':
+      await loc.dblclick();
+      return { dblclicked: true };
+    case 'fill':
+      await loc.fill(value!);
+      return { filled: value };
+    case 'type':
+      await loc.pressSequentially(value!);
+      return { typed: value };
+    case 'hover':
+      await loc.hover();
+      return { hovered: true };
+    case 'focus':
+      await loc.focus();
+      return { focused: true };
+    case 'check':
+      await loc.check();
+      return { checked: true };
+    case 'uncheck':
+      await loc.uncheck();
+      return { unchecked: true };
+    case 'select': {
+      const selected = await loc.selectOption([value!]);
+      return { selected };
+    }
+    default:
+      throw new Error(`Unknown semantic locator subaction "${subaction}".`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main executor
 // ---------------------------------------------------------------------------
@@ -711,7 +793,7 @@ export async function executeCommand(
         if (command.dryRun) {
           return dryRun(
             id,
-            `Set dialog handler: ${command.accept !== false ? 'accept' : 'dismiss'}`,
+            `Set dialog handler: ${command.accept === false ? 'dismiss' : 'accept'}`,
           );
         }
         const page = browser.getPage();
@@ -740,10 +822,10 @@ export async function executeCommand(
 
       case 'route': {
         if (command.dryRun) {
-          return dryRun(id, `Route "${command.url}" -> ${command.handler ?? 'abort'}`);
+          return dryRun(id, `Route "${command.url}" -> ${command.handler ?? 'continue'}`);
         }
         const ctx = browser.getContext();
-        const handler = command.handler ?? 'abort';
+        const handler = command.handler ?? 'continue';
 
         await ctx.route(command.url, async (routeObj) => {
           try {
@@ -766,14 +848,30 @@ export async function executeCommand(
             // Route may have been cancelled
           }
         });
+        browser.addRoute(command.url);
         return successResponse(id, { routed: command.url, handler });
       }
 
       case 'unroute': {
-        if (command.dryRun) return dryRun(id, `Remove route for "${command.url}"`);
+        if (command.dryRun) {
+          return dryRun(
+            id,
+            command.url ? `Remove route for "${command.url}"` : 'Remove all registered routes',
+          );
+        }
         const ctx = browser.getContext();
-        await ctx.unroute(command.url);
-        return successResponse(id, { unrouted: command.url });
+        if (command.url) {
+          await ctx.unroute(command.url);
+          browser.removeRoute(command.url);
+          return successResponse(id, { unrouted: command.url });
+        }
+
+        const routes = browser.getRoutes();
+        for (const routeUrl of routes) {
+          await ctx.unroute(routeUrl);
+        }
+        browser.clearRoutes();
+        return successResponse(id, { unrouted: 'all', count: routes.length });
       }
 
       case 'requests': {
@@ -903,7 +1001,7 @@ export async function executeCommand(
 
       case 'console': {
         if (command.dryRun) return dryRun(id, 'Get console messages');
-        let messages = browser.getConsoleMessages();
+        let messages = browser.getConsoleMessages(command.clear);
         // Apply level filter
         if (command.level) {
           messages = messages.filter((m) => m.type === command.level);
@@ -917,7 +1015,7 @@ export async function executeCommand(
 
       case 'errors': {
         if (command.dryRun) return dryRun(id, 'Get page errors');
-        let errs = browser.getPageErrors();
+        let errs = browser.getPageErrors(command.clear);
         if (command.limit) {
           errs = errs.slice(-command.limit);
         }
@@ -997,11 +1095,12 @@ export async function executeCommand(
       // =====================================================================
 
       case 'getbyrole': {
+        const subject = `role "${command.role}"${command.name ? ` with name "${command.name}"` : ''}`;
         if (command.dryRun) {
-          return dryRun(
-            id,
-            `Get element by role "${command.role}"${command.name ? ` with name "${command.name}"` : ''}`,
-          );
+          if (command.subaction) {
+            return dryRun(id, semanticActionLabel(command.subaction, subject, command.value));
+          }
+          return dryRun(id, `Get element by ${subject}`);
         }
         const page = browser.getPage();
         const opts: Record<string, unknown> = {};
@@ -1011,6 +1110,15 @@ export async function executeCommand(
           command.role as Parameters<Page['getByRole']>[0],
           opts,
         );
+        if (command.subaction) {
+          const result = await executeSemanticLocatorSubaction(loc, command.subaction, command.value);
+          return successResponse(id, {
+            role: command.role,
+            name: command.name ?? null,
+            subaction: command.subaction,
+            ...result,
+          });
+        }
         const cnt = await loc.count();
         let text: string | null = null;
         if (cnt === 1) {
@@ -1025,21 +1133,47 @@ export async function executeCommand(
       }
 
       case 'getbytext': {
-        if (command.dryRun) return dryRun(id, `Get element by text "${command.text}"`);
+        if (command.dryRun) {
+          if (command.subaction) {
+            return dryRun(id, semanticActionLabel(command.subaction, `text "${command.text}"`, command.value));
+          }
+          return dryRun(id, `Get element by text "${command.text}"`);
+        }
         const page = browser.getPage();
         const opts: Record<string, unknown> = {};
         if (command.exact !== undefined) opts.exact = command.exact;
         const loc = page.getByText(command.text, opts);
+        if (command.subaction) {
+          const result = await executeSemanticLocatorSubaction(loc, command.subaction, command.value);
+          return successResponse(id, {
+            text: command.text,
+            subaction: command.subaction,
+            ...result,
+          });
+        }
         const cnt = await loc.count();
         return successResponse(id, { text: command.text, count: cnt });
       }
 
       case 'getbylabel': {
-        if (command.dryRun) return dryRun(id, `Get element by label "${command.text}"`);
+        if (command.dryRun) {
+          if (command.subaction) {
+            return dryRun(id, semanticActionLabel(command.subaction, `label "${command.text}"`, command.value));
+          }
+          return dryRun(id, `Get element by label "${command.text}"`);
+        }
         const page = browser.getPage();
         const opts: Record<string, unknown> = {};
         if (command.exact !== undefined) opts.exact = command.exact;
         const loc = page.getByLabel(command.text, opts);
+        if (command.subaction) {
+          const result = await executeSemanticLocatorSubaction(loc, command.subaction, command.value);
+          return successResponse(id, {
+            label: command.text,
+            subaction: command.subaction,
+            ...result,
+          });
+        }
         const cnt = await loc.count();
         return successResponse(id, { label: command.text, count: cnt });
       }
@@ -1082,16 +1216,17 @@ export async function executeCommand(
       }
 
       case 'wheel': {
+        const deltaX = command.deltaX ?? 0;
         if (command.dryRun) {
           return dryRun(
             id,
-            `Mouse wheel (deltaX=${command.deltaX}, deltaY=${command.deltaY})`,
+            `Mouse wheel (deltaX=${deltaX}, deltaY=${command.deltaY})`,
           );
         }
         const page = browser.getPage();
-        await page.mouse.wheel(command.deltaX, command.deltaY);
+        await page.mouse.wheel(deltaX, command.deltaY);
         return successResponse(id, {
-          deltaX: command.deltaX,
+          deltaX,
           deltaY: command.deltaY,
         });
       }

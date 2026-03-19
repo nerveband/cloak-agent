@@ -142,6 +142,18 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 					m["userAgent"] = rest[i+1]
 					i++
 				}
+			case "--executable-path":
+				if i+1 < len(rest) {
+					m["executablePath"] = rest[i+1]
+					i++
+				}
+			case "--storage-state":
+				if i+1 < len(rest) {
+					m["storageState"] = rest[i+1]
+					i++
+				}
+			case "--ignore-https-errors":
+				m["ignoreHTTPSErrors"] = true
 			case "--viewport":
 				if i+1 < len(rest) {
 					parts := strings.Split(strings.ToLower(rest[i+1]), "x")
@@ -278,13 +290,13 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		if len(rest) < 2 {
 			return nil, fmt.Errorf("select requires a selector and a value")
 		}
-		return map[string]interface{}{"action": "select", "selector": rest[0], "values": rest[1]}, nil
+		return map[string]interface{}{"action": "select", "selector": rest[0], "values": []string{rest[1]}}, nil
 
 	case "upload":
 		if len(rest) < 2 {
 			return nil, fmt.Errorf("upload requires a selector and a file")
 		}
-		return map[string]interface{}{"action": "upload", "selector": rest[0], "files": rest[1]}, nil
+		return map[string]interface{}{"action": "upload", "selector": rest[0], "files": []string{rest[1]}}, nil
 
 	case "drag":
 		if len(rest) < 2 {
@@ -303,12 +315,32 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		if len(rest) < 2 {
 			return nil, fmt.Errorf("scroll requires a direction and amount")
 		}
-		dir := rest[0]
+		if x, err := strconv.Atoi(rest[0]); err == nil {
+			y, err := strconv.Atoi(rest[1])
+			if err != nil {
+				return nil, fmt.Errorf("scroll y must be numeric: %s", rest[1])
+			}
+			return map[string]interface{}{"action": "scroll", "x": x, "y": y}, nil
+		}
 		amount, err := strconv.Atoi(rest[1])
 		if err != nil {
 			return nil, fmt.Errorf("scroll amount must be numeric: %s", rest[1])
 		}
-		return map[string]interface{}{"action": "scroll", "direction": dir, "amount": amount}, nil
+		x := 0
+		y := 0
+		switch rest[0] {
+		case "down":
+			y = amount
+		case "up":
+			y = -amount
+		case "right":
+			x = amount
+		case "left":
+			x = -amount
+		default:
+			return nil, fmt.Errorf("scroll direction must be one of up, down, left, right")
+		}
+		return map[string]interface{}{"action": "scroll", "x": x, "y": y}, nil
 
 	case "scrollintoview":
 		if len(rest) < 1 {
@@ -345,7 +377,7 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			if len(rest) < 3 {
 				return nil, fmt.Errorf("get attr requires a selector and attribute name")
 			}
-			return map[string]interface{}{"action": "getattribute", "selector": rest[1], "attribute": rest[2]}, nil
+			return map[string]interface{}{"action": "getattribute", "selector": rest[1], "name": rest[2]}, nil
 		case "count":
 			if len(rest) < 2 {
 				return nil, fmt.Errorf("get count requires a selector")
@@ -400,7 +432,7 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		if len(rest) < 1 {
 			return nil, fmt.Errorf("eval requires a script")
 		}
-		return map[string]interface{}{"action": "evaluate", "script": rest[0]}, nil
+		return map[string]interface{}{"action": "evaluate", "expression": rest[0]}, nil
 
 	// ── wait ────────────────────────────────────────────────────────────
 	case "wait":
@@ -538,7 +570,7 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			if len(rest) < 2 {
 				return nil, fmt.Errorf("set device requires a name")
 			}
-			return map[string]interface{}{"action": "device", "device": rest[1]}, nil
+			return map[string]interface{}{"action": "device", "name": rest[1]}, nil
 		case "geo":
 			if len(rest) < 3 {
 				return nil, fmt.Errorf("set geo requires latitude and longitude")
@@ -556,7 +588,7 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			if len(rest) < 2 {
 				return nil, fmt.Errorf("set offline requires on or off")
 			}
-			return map[string]interface{}{"action": "offline", "offline": rest[1] == "on"}, nil
+			return map[string]interface{}{"action": "offline", "enabled": rest[1] == "on"}, nil
 		case "headers":
 			if len(rest) < 2 {
 				return nil, fmt.Errorf("set headers requires a JSON string")
@@ -609,21 +641,35 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			if len(rest) < 2 {
 				return nil, fmt.Errorf("network route requires a URL pattern")
 			}
-			m := map[string]interface{}{"action": "route", "url": rest[1]}
+			m := map[string]interface{}{"action": "route", "url": rest[1], "handler": "continue"}
 			for i := 2; i < len(rest); i++ {
 				switch rest[i] {
 				case "--abort":
-					m["abort"] = true
+					m["handler"] = "abort"
+				case "--continue":
+					m["handler"] = "continue"
 				case "--body":
 					if i+1 < len(rest) {
-						m["response"] = map[string]interface{}{"body": rest[i+1]}
+						m["handler"] = "fulfill"
+						m["body"] = rest[i+1]
+						i++
+					}
+				case "--status":
+					if i+1 < len(rest) {
+						if status, err := strconv.Atoi(rest[i+1]); err == nil {
+							m["status"] = status
+						}
 						i++
 					}
 				}
 			}
 			return m, nil
 		case "unroute":
-			return map[string]interface{}{"action": "unroute"}, nil
+			m := map[string]interface{}{"action": "unroute"}
+			if len(rest) > 1 {
+				m["url"] = rest[1]
+			}
+			return m, nil
 		case "requests":
 			m := map[string]interface{}{"action": "requests"}
 			for i := 1; i < len(rest); i++ {
@@ -642,7 +688,18 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		if len(rest) < 1 {
 			return nil, fmt.Errorf("dialog requires accept or dismiss")
 		}
-		return map[string]interface{}{"action": "dialog", "response": rest[0]}, nil
+		switch rest[0] {
+		case "accept":
+			m := map[string]interface{}{"action": "dialog", "accept": true}
+			if len(rest) > 1 {
+				m["promptText"] = rest[1]
+			}
+			return m, nil
+		case "dismiss":
+			return map[string]interface{}{"action": "dialog", "accept": false}, nil
+		default:
+			return nil, fmt.Errorf("dialog requires accept or dismiss")
+		}
 
 	// ── trace ───────────────────────────────────────────────────────────
 	case "trace":
@@ -693,6 +750,15 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 				if rest[i] == "--name" && i+1 < len(rest) {
 					m["name"] = rest[i+1]
 					i++
+				} else if rest[i] == "--exact" {
+					m["exact"] = true
+				} else if semanticLocatorNeedsValue(rest[2]) && !strings.HasPrefix(rest[i], "--") {
+					m["value"] = rest[i]
+				}
+			}
+			if semanticLocatorNeedsValue(rest[2]) {
+				if _, ok := m["value"]; !ok {
+					return nil, fmt.Errorf("find role %s requires a value", rest[2])
 				}
 			}
 			return m, nil
@@ -700,12 +766,26 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			if len(rest) < 3 {
 				return nil, fmt.Errorf("find text requires text and subaction")
 			}
-			return map[string]interface{}{"action": "getbytext", "text": rest[1], "subaction": rest[2]}, nil
+			m := map[string]interface{}{"action": "getbytext", "text": rest[1], "subaction": rest[2]}
+			if semanticLocatorNeedsValue(rest[2]) {
+				if len(rest) < 4 {
+					return nil, fmt.Errorf("find text %s requires a value", rest[2])
+				}
+				m["value"] = rest[3]
+			}
+			return m, nil
 		case "label":
 			if len(rest) < 3 {
 				return nil, fmt.Errorf("find label requires label and subaction")
 			}
-			return map[string]interface{}{"action": "getbylabel", "label": rest[1], "subaction": rest[2]}, nil
+			m := map[string]interface{}{"action": "getbylabel", "text": rest[1], "subaction": rest[2]}
+			if semanticLocatorNeedsValue(rest[2]) {
+				if len(rest) < 4 {
+					return nil, fmt.Errorf("find label %s requires a value", rest[2])
+				}
+				m["value"] = rest[3]
+			}
+			return m, nil
 		default:
 			return nil, fmt.Errorf("unknown find locator: %s", rest[0])
 		}
@@ -747,7 +827,7 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			if err != nil {
 				return nil, fmt.Errorf("mouse wheel delta must be numeric: %s", rest[1])
 			}
-			return map[string]interface{}{"action": "wheel", "deltaY": delta}, nil
+			return map[string]interface{}{"action": "wheel", "deltaX": 0, "deltaY": delta}, nil
 		default:
 			return nil, fmt.Errorf("unknown mouse subcommand: %s", rest[0])
 		}
@@ -842,6 +922,15 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 
 	default:
 		return nil, fmt.Errorf("unknown command: %s", strings.Join(args, " "))
+	}
+}
+
+func semanticLocatorNeedsValue(subaction string) bool {
+	switch subaction {
+	case "fill", "type", "select":
+		return true
+	default:
+		return false
 	}
 }
 

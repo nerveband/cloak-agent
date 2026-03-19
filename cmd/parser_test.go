@@ -72,6 +72,24 @@ func TestParseArgs_LaunchWithOptions(t *testing.T) {
 	}
 }
 
+func TestParseArgs_LaunchWithAdvancedOptions(t *testing.T) {
+	m, err := ParseArgs([]string{
+		"launch",
+		"--user-agent", "CustomAgent/1.0",
+		"--executable-path", "/tmp/cloakbrowser",
+		"--storage-state", "state.json",
+		"--ignore-https-errors",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "launch")
+	assertEq(t, m, "userAgent", "CustomAgent/1.0")
+	assertEq(t, m, "executablePath", "/tmp/cloakbrowser")
+	assertEq(t, m, "storageState", "state.json")
+	assertEq(t, m, "ignoreHTTPSErrors", true)
+}
+
 func TestParseArgs_SnapshotInteractive(t *testing.T) {
 	m, err := ParseArgs([]string{"snapshot", "-i"})
 	if err != nil {
@@ -207,6 +225,17 @@ func TestParseArgs_GetText(t *testing.T) {
 	assertEq(t, m, "selector", "@e1")
 }
 
+func TestParseArgs_GetAttrUsesNameField(t *testing.T) {
+	m, err := ParseArgs([]string{"get", "attr", "@e1", "href"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "getattribute")
+	assertEq(t, m, "selector", "@e1")
+	assertEq(t, m, "name", "href")
+	assertNoKey(t, m, "attribute")
+}
+
 func TestParseArgs_GetTitle(t *testing.T) {
 	m, err := ParseArgs([]string{"get", "title"})
 	if err != nil {
@@ -288,6 +317,161 @@ func TestParseArgs_TabClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertEq(t, m, "action", "tab_close")
+}
+
+func TestParseArgs_SelectReturnsArrayValues(t *testing.T) {
+	m, err := ParseArgs([]string{"select", "@e1", "blue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "select")
+	values, ok := m["values"].([]string)
+	if !ok {
+		t.Fatalf("expected []string values, got %T", m["values"])
+	}
+	if len(values) != 1 || values[0] != "blue" {
+		t.Fatalf("unexpected values: %#v", values)
+	}
+}
+
+func TestParseArgs_UploadReturnsArrayFiles(t *testing.T) {
+	m, err := ParseArgs([]string{"upload", "@e1", "file.pdf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "upload")
+	files, ok := m["files"].([]string)
+	if !ok {
+		t.Fatalf("expected []string files, got %T", m["files"])
+	}
+	if len(files) != 1 || files[0] != "file.pdf" {
+		t.Fatalf("unexpected files: %#v", files)
+	}
+}
+
+func TestParseArgs_ScrollDownMapsToPositiveY(t *testing.T) {
+	m, err := ParseArgs([]string{"scroll", "down", "500"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "scroll")
+	assertEq(t, m, "x", 0)
+	assertEq(t, m, "y", 500)
+	assertNoKey(t, m, "direction")
+	assertNoKey(t, m, "amount")
+}
+
+func TestParseArgs_ScrollUpMapsToNegativeY(t *testing.T) {
+	m, err := ParseArgs([]string{"scroll", "up", "300"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "scroll")
+	assertEq(t, m, "x", 0)
+	assertEq(t, m, "y", -300)
+}
+
+func TestParseArgs_EvalUsesExpressionField(t *testing.T) {
+	m, err := ParseArgs([]string{"eval", "document.title"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "evaluate")
+	assertEq(t, m, "expression", "document.title")
+	assertNoKey(t, m, "script")
+}
+
+func TestParseArgs_SetDeviceUsesNameField(t *testing.T) {
+	m, err := ParseArgs([]string{"set", "device", "iPhone 14"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "device")
+	assertEq(t, m, "name", "iPhone 14")
+	assertNoKey(t, m, "device")
+}
+
+func TestParseArgs_SetOfflineUsesEnabledField(t *testing.T) {
+	m, err := ParseArgs([]string{"set", "offline", "on"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "offline")
+	assertEq(t, m, "enabled", true)
+	assertNoKey(t, m, "offline")
+}
+
+func TestParseArgs_DialogAcceptWithPrompt(t *testing.T) {
+	m, err := ParseArgs([]string{"dialog", "accept", "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "dialog")
+	assertEq(t, m, "accept", true)
+	assertEq(t, m, "promptText", "hello")
+	assertNoKey(t, m, "response")
+}
+
+func TestParseArgs_DialogDismiss(t *testing.T) {
+	m, err := ParseArgs([]string{"dialog", "dismiss"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "dialog")
+	assertEq(t, m, "accept", false)
+}
+
+func TestParseArgs_NetworkRouteAbort(t *testing.T) {
+	m, err := ParseArgs([]string{"network", "route", "https://example.com", "--abort"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "route")
+	assertEq(t, m, "url", "https://example.com")
+	assertEq(t, m, "handler", "abort")
+	assertNoKey(t, m, "abort")
+}
+
+func TestParseArgs_NetworkRouteFulfill(t *testing.T) {
+	m, err := ParseArgs([]string{"network", "route", "https://example.com", "--body", "{}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "route")
+	assertEq(t, m, "url", "https://example.com")
+	assertEq(t, m, "handler", "fulfill")
+	assertEq(t, m, "body", "{}")
+	assertNoKey(t, m, "response")
+}
+
+func TestParseArgs_NetworkUnrouteOptionalURL(t *testing.T) {
+	m, err := ParseArgs([]string{"network", "unroute", "https://example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "unroute")
+	assertEq(t, m, "url", "https://example.com")
+}
+
+func TestParseArgs_FindLabelFill(t *testing.T) {
+	m, err := ParseArgs([]string{"find", "label", "Email", "fill", "user@test.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "getbylabel")
+	assertEq(t, m, "text", "Email")
+	assertEq(t, m, "subaction", "fill")
+	assertEq(t, m, "value", "user@test.com")
+}
+
+func TestParseArgs_MouseWheelIncludesDeltaX(t *testing.T) {
+	m, err := ParseArgs([]string{"mouse", "wheel", "100"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "wheel")
+	assertEq(t, m, "deltaX", 0)
+	assertEq(t, m, "deltaY", 100)
 }
 
 func TestParseArgs_Schema(t *testing.T) {

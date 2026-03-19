@@ -119,21 +119,45 @@ func executableDir() string {
 	return filepath.Dir(exePath)
 }
 
+func hasSourceLayout(root string) bool {
+	return fileExists(filepath.Join(root, "go.mod")) &&
+		fileExists(filepath.Join(root, "daemon", "package.json")) &&
+		fileExists(filepath.Join(root, "scripts", "install.sh"))
+}
+
+func walkUpToSourceRoot(start string) string {
+	if start == "" {
+		return ""
+	}
+
+	root, err := filepath.Abs(start)
+	if err != nil {
+		return ""
+	}
+
+	for {
+		if hasSourceLayout(root) {
+			return root
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			return ""
+		}
+		root = parent
+	}
+}
+
 func findSourceProjectDir() string {
 	candidates := []string{}
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, cwd)
 	}
 	if exeDir := executableDir(); exeDir != "" {
-		candidates = append(candidates, filepath.Join(exeDir, ".."))
+		candidates = append(candidates, exeDir, filepath.Join(exeDir, ".."))
 	}
 
 	for _, candidate := range candidates {
-		root, err := filepath.Abs(candidate)
-		if err != nil {
-			continue
-		}
-		if fileExists(filepath.Join(root, "go.mod")) && fileExists(filepath.Join(root, "daemon", "package.json")) && fileExists(filepath.Join(root, "scripts", "install.sh")) {
+		if root := walkUpToSourceRoot(candidate); root != "" {
 			return root
 		}
 	}
@@ -192,13 +216,20 @@ func findDaemonJS() (string, error) {
 		candidates = append(candidates, filepath.Join(dir, "dist", "daemon.js"))
 	}
 
-	// 2. Relative to the executable: <exe_dir>/../daemon/dist/daemon.js
+	// 2. Source checkout layout detected from cwd / executable path.
+	if projectDir := findSourceProjectDir(); projectDir != "" {
+		candidates = append(candidates, filepath.Join(projectDir, "daemon", "dist", "daemon.js"))
+	}
+
+	// 3. Relative to the executable: <exe_dir>/daemon/dist/daemon.js and
+	// <exe_dir>/../daemon/dist/daemon.js for installed layouts.
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates, filepath.Join(exeDir, "daemon", "dist", "daemon.js"))
 		candidates = append(candidates, filepath.Join(exeDir, "..", "daemon", "dist", "daemon.js"))
 	}
 
-	// 3. Relative to app dir: ~/.cloak-agent/daemon/dist/daemon.js
+	// 4. Relative to app dir: ~/.cloak-agent/daemon/dist/daemon.js
 	candidates = append(candidates, filepath.Join(GetAppDir(), "daemon", "dist", "daemon.js"))
 
 	for _, p := range candidates {

@@ -15,7 +15,7 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.1.1"
+var Version = "0.1.2"
 
 func Execute(args []string) error {
 	if len(args) == 0 {
@@ -101,29 +101,17 @@ func Execute(args []string) error {
 	}
 
 	// Handle special non-daemon commands
-	if action, ok := command["action"].(string); ok {
-		switch action {
-		case "session_list":
-			return handleSessionList(flags)
-		case "daemon_start":
-			return handleDaemonStart(flags)
-		case "daemon_stop":
-			return handleDaemonStop(flags)
-		case "daemon_restart":
-			return handleDaemonRestart(flags)
-		case "daemon_status":
-			return handleDaemonStatus(flags)
-		case "daemon_logs":
-			return handleDaemonLogs(flags)
-		}
+	if handled, specialErr := executeSpecialCommand(command, flags); handled {
+		return specialErr
 	}
 
-	// Add command ID
-	command["id"] = generateID()
+	ensureCommandID(command)
+	applyGlobalCommandFlags(command, flags)
 
-	// Add dry-run flag
-	if flags.DryRun {
-		command["dryRun"] = true
+	var restoreHeadedEnv func()
+	if action, ok := command["action"].(string); ok && flags.Headed && action != "launch" {
+		restoreHeadedEnv = setTemporaryEnv("CLOAK_AGENT_HEADED", "1")
+		defer restoreHeadedEnv()
 	}
 
 	// Marshal to JSON
@@ -170,11 +158,65 @@ func Execute(args []string) error {
 	return nil
 }
 
+func executeSpecialCommand(command map[string]interface{}, flags GlobalFlags) (bool, error) {
+	action, ok := command["action"].(string)
+	if !ok {
+		return false, nil
+	}
+
+	switch action {
+	case "session_list":
+		return true, handleSessionList(flags)
+	case "daemon_start":
+		return true, handleDaemonStart(flags)
+	case "daemon_stop":
+		return true, handleDaemonStop(flags)
+	case "daemon_restart":
+		return true, handleDaemonRestart(flags)
+	case "daemon_status":
+		return true, handleDaemonStatus(flags)
+	case "daemon_logs":
+		return true, handleDaemonLogs(flags)
+	default:
+		return false, nil
+	}
+}
+
+func ensureCommandID(command map[string]interface{}) {
+	if id, ok := command["id"].(string); ok && strings.TrimSpace(id) != "" {
+		return
+	}
+	command["id"] = generateID()
+}
+
+func applyGlobalCommandFlags(command map[string]interface{}, flags GlobalFlags) {
+	if flags.DryRun {
+		command["dryRun"] = true
+	}
+	if flags.Headed {
+		if action, ok := command["action"].(string); ok && action == "launch" {
+			command["headless"] = false
+		}
+	}
+}
+
 
 func generateID() string {
 	b := make([]byte, 4)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func setTemporaryEnv(key string, value string) func() {
+	prev, hadPrev := os.LookupEnv(key)
+	os.Setenv(key, value)
+	return func() {
+		if hadPrev {
+			os.Setenv(key, prev)
+			return
+		}
+		os.Unsetenv(key)
+	}
 }
 
 func handleInstall() error {
@@ -195,6 +237,19 @@ func handleInstall() error {
 	daemonDir := findInstalledDaemonDir()
 	if daemonDir == "" {
 		return fmt.Errorf("install requires either a cloak-agent source checkout (with scripts/install.sh) or an installed daemon layout under %s", GetAppDir())
+	}
+
+	for _, binary := range []struct {
+		name    string
+		message string
+	}{
+		{"node", "node not found in PATH; install Node.js 18+ to run cloak-agent install"},
+		{"npm", "npm not found in PATH; install npm to bootstrap cloak-agent"},
+		{"npx", "npx not found in PATH; install npm to run cloakbrowser install"},
+	} {
+		if _, err := exec.LookPath(binary.name); err != nil {
+			return fmt.Errorf("%s", binary.message)
+		}
 	}
 
 	steps := []struct {
@@ -224,9 +279,14 @@ func handleSessionList(flags GlobalFlags) error {
 	dir := GetSocketDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		if flags.JSONOutput {
+			printSpecialResponse(flags, map[string]interface{}{"sessions": []map[string]string{}})
+			return nil
+		}
 		fmt.Println("No active sessions")
 		return nil
 	}
+	sessions := make([]map[string]string, 0)
 	found := false
 	for _, e := range entries {
 		name := e.Name()
@@ -237,9 +297,19 @@ func handleSessionList(flags GlobalFlags) error {
 			if running {
 				status = "running"
 			}
-			fmt.Printf("  %s (%s)\n", session, status)
+			sessions = append(sessions, map[string]string{
+				"session": session,
+				"status":  status,
+			})
+			if !flags.JSONOutput {
+				fmt.Printf("  %s (%s)\n", session, status)
+			}
 			found = true
 		}
+	}
+	if flags.JSONOutput {
+		printSpecialResponse(flags, map[string]interface{}{"sessions": sessions})
+		return nil
 	}
 	if !found {
 		fmt.Println("No active sessions")
@@ -248,7 +318,7 @@ func handleSessionList(flags GlobalFlags) error {
 }
 
 func printSpecialResponse(flags GlobalFlags, data interface{}) {
-	PrintResponse(Response{Success: true, Data: data}, flags)
+	PrintResponse(Response{ID: generateID(), OK: true, Success: true, Data: data}, flags)
 }
 
 func daemonStatusData(session string) map[string]interface{} {
@@ -308,6 +378,15 @@ func handleDaemonStatus(flags GlobalFlags) error {
 func handleDaemonLogs(flags GlobalFlags) error {
 	data, err := os.ReadFile(GetLogFile(flags.Session))
 	if err != nil {
+		if os.IsNotExist(err) {
+			payload := map[string]interface{}{"session": flags.Session, "log": "", "missing": true}
+			if flags.JSONOutput {
+				printSpecialResponse(flags, payload)
+				return nil
+			}
+			fmt.Printf("No daemon log file for session %q yet.\n", flags.Session)
+			return nil
+		}
 		return fmt.Errorf("failed to read daemon log: %w", err)
 	}
 	if flags.JSONOutput {
@@ -347,7 +426,7 @@ Interaction:
   press <key>                    Press keyboard key
   hover, focus, check, uncheck   Element interactions
   select <ref> <value>           Select dropdown option
-  scroll down|up <amount>        Scroll page
+  scroll up|down|left|right <n>  Scroll page
 
 Inspection:
   snapshot [-i] [-c] [-d N]      Get page structure with @refs
@@ -398,6 +477,9 @@ Launch flags:
   --gpu-vendor <name>            Override GPU vendor
   --gpu-renderer <name>          Override GPU renderer
   --user-agent <ua>              Override user agent
+  --executable-path <path>       Use a specific browser executable
+  --storage-state <path>         Apply Playwright storage state on launch
+  --ignore-https-errors          Ignore TLS certificate errors
   --arg <flag>                   Extra Chromium/CloakBrowser arg (repeatable)
 
 Made by Ashraf (https://ashrafali.net)`)

@@ -22,7 +22,7 @@ cloak-agent reload                        # Reload page
 cloak-agent close                         # Close browser and stop daemon
 ```
 
-Launch accepts agent-friendly runtime flags like `--profile`, `--proxy`, `--timezone`, `--locale`, `--viewport`, `--geoip`, `--fingerprint-seed`, `--platform`, `--gpu-vendor`, `--gpu-renderer`, `--user-agent`, and repeatable `--arg`.
+Launch accepts agent-friendly runtime flags like `--profile`, `--proxy`, `--timezone`, `--locale`, `--viewport`, `--geoip`, `--fingerprint-seed`, `--platform`, `--gpu-vendor`, `--gpu-renderer`, `--user-agent`, `--executable-path`, `--storage-state`, `--ignore-https-errors`, and repeatable `--arg`.
 
 ## Snapshots
 
@@ -171,10 +171,12 @@ cloak-agent storage local clear        # Clear localStorage
 ```bash
 cloak-agent network requests                   # View tracked requests
 cloak-agent network requests --filter api      # Filter by URL pattern
-cloak-agent network route <url>                # Intercept requests
+cloak-agent network route <url>                # Intercept and continue matching requests
 cloak-agent network route <url> --abort        # Block requests
 cloak-agent network route <url> --body '{}'    # Mock response
+cloak-agent network route <url> --status 201 --body '{}' # Mock with custom status
 cloak-agent network unroute                    # Remove all routes
+cloak-agent network unroute <url>              # Remove one route
 ```
 
 ## Tabs

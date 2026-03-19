@@ -51,7 +51,7 @@ make install
 ./cloak-agent install
 ```
 
-Source installs copy the binary and daemon to `~/.cloak-agent/` and symlink to `/usr/local/bin/` when writable. Installed-layout runs bootstrap daemon production dependencies and runs `cloakbrowser install` if the stealth Chromium runtime is missing.
+Source installs copy the binary and daemon to `~/.cloak-agent/`, install daemon production dependencies, run `cloakbrowser install`, and symlink to `/usr/local/bin/` when writable. Installed-layout runs the same daemon/bootstrap steps in place.
 
 ## Quick start
 
@@ -167,8 +167,11 @@ cloak-agent launch https://example.com \
   --timezone America/New_York \
   --locale en-US \
   --viewport 1440x900 \
+  --user-agent CustomAgent/1.0 \
+  --storage-state state.json \
   --geoip \
   --fingerprint-seed 42 \
+  --ignore-https-errors \
   --arg --disable-gpu
 
 cloak-agent daemon start
@@ -213,6 +216,7 @@ cloak-agent state load auth.json    # Restore session
 # Network
 cloak-agent network requests        # View tracked requests
 cloak-agent network route <url> --abort  # Block requests
+cloak-agent network unroute         # Remove all registered routes
 ```
 
 ## For AI agents
@@ -244,6 +248,7 @@ Agents can discover what commands exist and what parameters they take:
 ```bash
 cloak-agent schema              # List all commands
 cloak-agent schema navigate     # Show navigate's parameters
+cloak-agent schema launch       # Show launch-only fields and option names
 ```
 
 ### Dry run
@@ -285,6 +290,13 @@ The daemon validates all input from agents:
 | `--headed` | Show browser window |
 | `--dry-run` | Validate without executing |
 | `--fields <list>` | Limit response fields |
+
+## Troubleshooting
+
+- `node` or `npm` missing: `cloak-agent install` now fails early with a direct prerequisite message instead of a shell stack trace.
+- Daemon startup failure: run `cloak-agent --output json daemon status` and `cloak-agent --output json daemon logs` to inspect the socket path, pid file, and latest log output.
+- CloakBrowser missing: run `cloak-agent install`; source installs and installed-layout installs both run `npx cloakbrowser install`.
+- Working from a source checkout: the repo-built `./cloak-agent` now resolves `daemon/dist/daemon.js` from the checkout itself, so smoke tests and local development use the current code instead of an older installed daemon copy.
 
 ## Examples
 

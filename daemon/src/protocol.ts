@@ -15,6 +15,19 @@ const waitUntilEnum = z.enum(['load', 'domcontentloaded', 'networkidle']).option
 const modifiers = z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).optional();
 const buttonEnum = z.enum(['left', 'right', 'middle']).optional();
 const positionObj = z.object({ x: z.number(), y: z.number() }).optional();
+const viewportObj = z.object({ width: z.number(), height: z.number() });
+const semanticSubactionEnum = z.enum([
+  'count',
+  'click',
+  'dblclick',
+  'fill',
+  'type',
+  'hover',
+  'focus',
+  'check',
+  'uncheck',
+  'select',
+]).optional();
 
 const proxySchema = z.union([
   z.string(),
@@ -46,6 +59,12 @@ const launch = z.object({
   gpuRenderer: z.string().optional(),
   proxy: proxySchema.optional(),
   profile: z.string().optional(),
+  userAgent: z.string().optional(),
+  viewport: viewportObj.optional(),
+  args: z.array(z.string()).optional(),
+  executablePath: z.string().optional(),
+  storageState: z.string().optional(),
+  ignoreHTTPSErrors: z.boolean().optional(),
 });
 
 const navigate = z.object({
@@ -164,7 +183,7 @@ const dialog = z.object({ ...base, action: z.literal('dialog'), accept: z.boolea
 
 // --- Network ---
 const route = z.object({ ...base, action: z.literal('route'), url: z.string(), handler: z.enum(['abort', 'continue', 'fulfill']).optional(), body: z.string().optional(), status: z.number().optional() });
-const unroute = z.object({ ...base, action: z.literal('unroute'), url: z.string() });
+const unroute = z.object({ ...base, action: z.literal('unroute'), url: z.string().optional() });
 const requests = z.object({ ...base, action: z.literal('requests'), filter: z.string().optional(), limit: z.number().optional() });
 
 // --- Settings ---
@@ -181,8 +200,8 @@ const state_save = z.object({ ...base, action: z.literal('state_save'), path: z.
 const state_load = z.object({ ...base, action: z.literal('state_load'), path: z.string() });
 
 // --- Debug ---
-const console_ = z.object({ ...base, action: z.literal('console'), limit: z.number().optional(), level: z.string().optional() });
-const errors = z.object({ ...base, action: z.literal('errors'), limit: z.number().optional() });
+const console_ = z.object({ ...base, action: z.literal('console'), limit: z.number().optional(), level: z.string().optional(), clear: z.boolean().optional() });
+const errors = z.object({ ...base, action: z.literal('errors'), limit: z.number().optional(), clear: z.boolean().optional() });
 const highlight = z.object({ ...base, action: z.literal('highlight'), selector: z.string(), color: z.string().optional(), duration: z.number().optional() });
 
 // --- Trace / Recording ---
@@ -192,15 +211,15 @@ const recording_start = z.object({ ...base, action: z.literal('recording_start')
 const recording_stop = z.object({ ...base, action: z.literal('recording_stop') });
 
 // --- Semantic locators ---
-const getbyrole = z.object({ ...base, action: z.literal('getbyrole'), role: z.string(), name: z.string().optional(), exact: z.boolean().optional() });
-const getbytext = z.object({ ...base, action: z.literal('getbytext'), text: z.string(), exact: z.boolean().optional() });
-const getbylabel = z.object({ ...base, action: z.literal('getbylabel'), text: z.string(), exact: z.boolean().optional() });
+const getbyrole = z.object({ ...base, action: z.literal('getbyrole'), role: z.string(), name: z.string().optional(), exact: z.boolean().optional(), subaction: semanticSubactionEnum, value: z.string().optional() });
+const getbytext = z.object({ ...base, action: z.literal('getbytext'), text: z.string(), exact: z.boolean().optional(), subaction: semanticSubactionEnum, value: z.string().optional() });
+const getbylabel = z.object({ ...base, action: z.literal('getbylabel'), text: z.string(), exact: z.boolean().optional(), subaction: semanticSubactionEnum, value: z.string().optional() });
 
 // --- Mouse ---
 const mousemove = z.object({ ...base, action: z.literal('mousemove'), x: z.number(), y: z.number(), steps: z.number().optional() });
 const mousedown = z.object({ ...base, action: z.literal('mousedown'), button: buttonEnum });
 const mouseup = z.object({ ...base, action: z.literal('mouseup'), button: buttonEnum });
-const wheel = z.object({ ...base, action: z.literal('wheel'), deltaX: z.number(), deltaY: z.number() });
+const wheel = z.object({ ...base, action: z.literal('wheel'), deltaX: z.number().optional(), deltaY: z.number() });
 
 // --- Schema introspection ---
 const schema = z.object({ ...base, action: z.literal('schema'), command: z.string().optional(), all: z.boolean().optional() });

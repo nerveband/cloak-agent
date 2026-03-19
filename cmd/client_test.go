@@ -108,3 +108,19 @@ func TestFindInstalledDaemonDirFromAppDir(t *testing.T) {
 		t.Fatalf("expected installed daemon dir %s, got %s", daemonDir, got)
 	}
 }
+
+func TestFindSourceProjectDirFromPackageDir(t *testing.T) {
+	got := findSourceProjectDir()
+	if got == "" {
+		t.Fatal("expected source project dir to be found")
+	}
+	if !strings.HasSuffix(got, "cloak-agent") {
+		t.Fatalf("expected source project dir to end with cloak-agent, got %s", got)
+	}
+	if !fileExists(filepath.Join(got, "go.mod")) {
+		t.Fatalf("expected go.mod at %s", got)
+	}
+	if !fileExists(filepath.Join(got, "daemon", "package.json")) {
+		t.Fatalf("expected daemon/package.json at %s", got)
+	}
+}

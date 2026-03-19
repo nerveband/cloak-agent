@@ -74,6 +74,80 @@ describe('parseCommand', () => {
     }
   });
 
+  it('parses launch with advanced browser options', () => {
+    const result = parseCommand(
+      JSON.stringify({
+        id: '3b',
+        action: 'launch',
+        userAgent: 'CustomAgent/1.0',
+        viewport: { width: 1440, height: 900 },
+        args: ['--disable-gpu'],
+        executablePath: '/tmp/cloakbrowser',
+        storageState: 'state.json',
+        ignoreHTTPSErrors: true,
+      })
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const cmd = result.command as any;
+      expect(cmd.userAgent).toBe('CustomAgent/1.0');
+      expect(cmd.viewport).toEqual({ width: 1440, height: 900 });
+      expect(cmd.args).toEqual(['--disable-gpu']);
+      expect(cmd.executablePath).toBe('/tmp/cloakbrowser');
+      expect(cmd.storageState).toBe('state.json');
+      expect(cmd.ignoreHTTPSErrors).toBe(true);
+    }
+  });
+
+  it('parses dialog accept and dismiss payloads', () => {
+    const accept = parseCommand(
+      JSON.stringify({ id: '3c', action: 'dialog', accept: true, promptText: 'hello' })
+    );
+    expect(accept.ok).toBe(true);
+
+    const dismiss = parseCommand(
+      JSON.stringify({ id: '3d', action: 'dialog', accept: false })
+    );
+    expect(dismiss.ok).toBe(true);
+  });
+
+  it('parses route and unroute payloads', () => {
+    const route = parseCommand(
+      JSON.stringify({
+        id: '3e',
+        action: 'route',
+        url: 'https://example.com',
+        handler: 'fulfill',
+        body: '{}',
+        status: 201,
+      })
+    );
+    expect(route.ok).toBe(true);
+
+    const unroute = parseCommand(
+      JSON.stringify({ id: '3f', action: 'unroute' })
+    );
+    expect(unroute.ok).toBe(true);
+  });
+
+  it('parses console clear and semantic locator subactions', () => {
+    const consoleResult = parseCommand(
+      JSON.stringify({ id: '3g', action: 'console', clear: true })
+    );
+    expect(consoleResult.ok).toBe(true);
+
+    const labelFill = parseCommand(
+      JSON.stringify({
+        id: '3h',
+        action: 'getbylabel',
+        text: 'Email',
+        subaction: 'fill',
+        value: 'user@test.com',
+      })
+    );
+    expect(labelFill.ok).toBe(true);
+  });
+
   it('parses stealth_status', () => {
     const result = parseCommand(JSON.stringify({ id: '4', action: 'stealth_status' }));
     expect(result.ok).toBe(true);
@@ -193,6 +267,12 @@ describe('dumpSchema', () => {
     expect(schema!.platform).toEqual(
       expect.objectContaining({ type: 'enum', required: false })
     );
+    expect(schema!.userAgent).toEqual({ type: 'string', required: false });
+    expect(schema!.viewport).toEqual({ type: 'object', required: false });
+    expect(schema!.args).toEqual({ type: 'array', required: false });
+    expect(schema!.executablePath).toEqual({ type: 'string', required: false });
+    expect(schema!.storageState).toEqual({ type: 'string', required: false });
+    expect(schema!.ignoreHTTPSErrors).toEqual({ type: 'boolean', required: false });
   });
 });
 

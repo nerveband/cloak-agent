@@ -37,7 +37,7 @@ export class BrowserManager {
   private consoleMessages: Array<{ type: string; text: string }> = [];
   private pageErrors: string[] = [];
   private trackedRequests: Array<{ url: string; method: string; status?: number }> = [];
-  private routes: Map<string, unknown> = new Map();
+  private routes: Map<string, true> = new Map();
   private isPersistentContext: boolean = false;
   private dialogHandler: ((dialog: any) => void) | null = null;
 
@@ -290,6 +290,22 @@ export class BrowserManager {
       this.trackedRequests = [];
     }
     return requests;
+  }
+
+  addRoute(url: string): void {
+    this.routes.set(url, true);
+  }
+
+  removeRoute(url: string): void {
+    this.routes.delete(url);
+  }
+
+  getRoutes(): string[] {
+    return [...this.routes.keys()];
+  }
+
+  clearRoutes(): void {
+    this.routes = new Map();
   }
 
   // ── Teardown ────────────────────────────────────────────────────────────

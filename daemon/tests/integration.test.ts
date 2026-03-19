@@ -2,12 +2,12 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { BrowserManager } from '../src/browser.js';
 import { getSnapshotStats } from '../src/snapshot.js';
 
-describe('integration: stealth browser', () => {
+describe('integration: stealth browser', { timeout: 120000 }, () => {
   const browser = new BrowserManager();
 
   afterAll(async () => {
     await browser.close();
-  });
+  }, 30000);
 
   it('launches CloakBrowser and navigates', async () => {
     await browser.launch({ headless: true });
@@ -45,4 +45,4 @@ describe('integration: stealth browser', () => {
     expect(tabs.length).toBe(1);
     expect(tabs[0].url).toContain('example.com');
   });
-}, { timeout: 120000 });
+});
