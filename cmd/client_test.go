@@ -91,3 +91,20 @@ func TestIsDaemonRunningWithBadPid(t *testing.T) {
 		t.Error("expected daemon not running for invalid PID")
 	}
 }
+
+func TestFindInstalledDaemonDirFromAppDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	daemonDir := filepath.Join(home, ".cloak-agent", "daemon")
+	if err := os.MkdirAll(daemonDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(daemonDir, "package.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := findInstalledDaemonDir()
+	if got != daemonDir {
+		t.Fatalf("expected installed daemon dir %s, got %s", daemonDir, got)
+	}
+}

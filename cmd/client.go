@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -20,9 +21,36 @@ const (
 // Response represents a JSON response from the daemon.
 type Response struct {
 	ID      string      `json:"id"`
+	OK      bool        `json:"ok,omitempty"`
 	Success bool        `json:"success"`
 	Data    interface{} `json:"data,omitempty"`
 	Error   string      `json:"error,omitempty"`
+}
+
+func (r *Response) UnmarshalJSON(data []byte) error {
+	type Alias Response
+	aux := struct {
+		Success *bool `json:"success"`
+		OK      *bool `json:"ok"`
+		*Alias
+	}{Alias: (*Alias)(r)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if aux.Success != nil {
+		r.Success = *aux.Success
+	}
+	if aux.OK != nil {
+		r.OK = *aux.OK
+		if aux.Success == nil {
+			r.Success = *aux.OK
+		}
+	}
+	return nil
+}
+
+func (r Response) IsSuccess() bool {
+	return r.Success || r.OK
 }
 
 // GetAppDir returns the path to ~/.cloak-agent.
@@ -60,6 +88,77 @@ func GetSocketPath(session string) string {
 // GetPidFile returns the path to the PID file for the given session.
 func GetPidFile(session string) string {
 	return filepath.Join(GetSocketDir(), session+".pid")
+}
+
+// GetLogFile returns the path to the daemon log file for the given session.
+func GetLogFile(session string) string {
+	return filepath.Join(GetSocketDir(), session+".log")
+}
+
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func dirExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func executableDir() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return filepath.Dir(exePath)
+}
+
+func findSourceProjectDir() string {
+	candidates := []string{}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, cwd)
+	}
+	if exeDir := executableDir(); exeDir != "" {
+		candidates = append(candidates, filepath.Join(exeDir, ".."))
+	}
+
+	for _, candidate := range candidates {
+		root, err := filepath.Abs(candidate)
+		if err != nil {
+			continue
+		}
+		if fileExists(filepath.Join(root, "go.mod")) && fileExists(filepath.Join(root, "daemon", "package.json")) && fileExists(filepath.Join(root, "scripts", "install.sh")) {
+			return root
+		}
+	}
+
+	return ""
+}
+
+func findInstalledDaemonDir() string {
+	candidates := []string{}
+	if exeDir := executableDir(); exeDir != "" {
+		candidates = append(candidates, filepath.Join(exeDir, "..", "daemon"))
+	}
+	candidates = append(candidates, filepath.Join(GetAppDir(), "daemon"))
+
+	for _, candidate := range candidates {
+		abs, err := filepath.Abs(candidate)
+		if err != nil {
+			continue
+		}
+		if dirExists(abs) && fileExists(filepath.Join(abs, "package.json")) {
+			return abs
+		}
+	}
+
+	return ""
 }
 
 // IsDaemonRunning checks whether the daemon for the given session is running
@@ -128,15 +227,25 @@ func StartDaemon(session string) error {
 		return fmt.Errorf("failed to create socket dir: %w", err)
 	}
 
-	cmd := exec.Command("node", daemonJS)
+	nodePath, err := exec.LookPath("node")
+	if err != nil {
+		return fmt.Errorf("node not found in PATH; install Node.js 18+ to run cloak-agent")
+	}
+
+	cmd := exec.Command(nodePath, daemonJS)
 	cmd.Env = append(os.Environ(),
 		"CLOAK_AGENT_DAEMON=1",
 		"CLOAK_AGENT_SESSION="+session,
 	)
 	// Detach the child process so it outlives the CLI.
 	setDetachAttrs(cmd)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	logFile, err := os.OpenFile(GetLogFile(session), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to open daemon log file: %w", err)
+	}
+	defer logFile.Close()
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	cmd.Stdin = nil
 
 	if err := cmd.Start(); err != nil {
@@ -156,7 +265,30 @@ func StartDaemon(session string) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	return fmt.Errorf("timed out waiting for daemon socket at %s", socketPath)
+	return fmt.Errorf("timed out waiting for daemon socket at %s (log: %s)", socketPath, GetLogFile(session))
+}
+
+// StopDaemon terminates the daemon for the given session.
+func StopDaemon(session string) error {
+	pidPath := GetPidFile(session)
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		return fmt.Errorf("daemon for session %q is not running", session)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return fmt.Errorf("invalid PID file for session %q", session)
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("failed to find daemon process: %w", err)
+	}
+	if err := proc.Kill(); err != nil {
+		return fmt.Errorf("failed to stop daemon: %w", err)
+	}
+	_ = os.Remove(GetSocketPath(session))
+	_ = os.Remove(GetPidFile(session))
+	return nil
 }
 
 // SendCommand sends a JSON command to the daemon over the Unix socket and

@@ -83,6 +83,12 @@ export async function executeCommand(
         if (command.gpuVendor) launchOpts.gpuVendor = command.gpuVendor;
         if (command.gpuRenderer) launchOpts.gpuRenderer = command.gpuRenderer;
         if (command.proxy) launchOpts.proxy = command.proxy;
+        if ((command as any).args) launchOpts.args = (command as any).args;
+        if ((command as any).userAgent) launchOpts.userAgent = (command as any).userAgent;
+        if ((command as any).viewport) launchOpts.viewport = (command as any).viewport;
+        if ((command as any).executablePath) launchOpts.executablePath = (command as any).executablePath;
+        if ((command as any).storageState) launchOpts.storageState = (command as any).storageState;
+        if ((command as any).ignoreHTTPSErrors !== undefined) launchOpts.ignoreHTTPSErrors = (command as any).ignoreHTTPSErrors;
         if (command.profile) launchOpts.profile = command.profile;
         await browser.launch(launchOpts as any);
 

@@ -15,9 +15,13 @@ export interface BrowserLaunchOptions extends StealthOptions {
   profile?: string;
   viewport?: { width: number; height: number };
   userAgent?: string;
-  proxy?: string;
+  proxy?: string | { server: string; bypass?: string; username?: string; password?: string };
+  args?: string[];
+  executablePath?: string;
   storageState?: string;
   ignoreHTTPSErrors?: boolean;
+  locale?: string;
+  timezone?: string;
 }
 
 // ── BrowserManager ──────────────────────────────────────────────────────────
@@ -54,8 +58,8 @@ export class BrowserManager {
   // ── Launch ──────────────────────────────────────────────────────────────
 
   async launch(options: BrowserLaunchOptions = {}): Promise<void> {
-    const executablePath = await ensureBinary();
-    const stealthArgs = buildStealthArgs(options);
+    const executablePath = options.executablePath ?? await ensureBinary();
+    const stealthArgs = [...buildStealthArgs(options), ...(options.args ?? [])];
     const viewport = options.viewport ?? { width: 1920, height: 947 };
 
     if (options.profile) {
@@ -69,8 +73,10 @@ export class BrowserManager {
         headless: options.headless ?? true,
         viewport,
         userAgent: options.userAgent,
-        proxy: options.proxy ? { server: options.proxy } : undefined,
+        proxy: typeof options.proxy === 'string' ? { server: options.proxy } : options.proxy,
         ignoreHTTPSErrors: options.ignoreHTTPSErrors ?? false,
+        locale: options.locale,
+        timezoneId: options.timezone,
       };
 
       const context = await chromium.launchPersistentContext(userDataDir, launchOptions as any);
@@ -84,15 +90,21 @@ export class BrowserManager {
       const browser = await cloakLaunch({
         headless: options.headless ?? true,
         args: stealthArgs,
-      });
+        executablePath,
+        locale: options.locale,
+        timezone: options.timezone,
+        userAgent: options.userAgent,
+        proxy: options.proxy as any,
+      } as any);
       this.browser = browser;
 
       const context = await browser.newContext({
         viewport,
         userAgent: options.userAgent,
-        proxy: options.proxy ? { server: options.proxy } : undefined,
+        proxy: typeof options.proxy === 'string' ? { server: options.proxy } : options.proxy,
         storageState: options.storageState,
         ignoreHTTPSErrors: options.ignoreHTTPSErrors ?? false,
+        locale: options.locale,
       });
       this.contexts.push(context);
 

@@ -13,6 +13,22 @@ func TestFormatResponseJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
 		t.Fatalf("expected valid JSON, got: %s", result)
 	}
+	if parsed["success"] != true {
+		t.Fatalf("expected success=true in JSON output, got %#v", parsed)
+	}
+}
+
+func TestFormatResponseJSONWithOKCompatibility(t *testing.T) {
+	resp := Response{ID: "1", OK: true, Data: map[string]interface{}{"status": "running"}}
+	flags := GlobalFlags{JSONOutput: true}
+	result := FormatResponse(resp, flags)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+		t.Fatalf("expected valid JSON, got: %s", result)
+	}
+	if parsed["ok"] != true {
+		t.Fatalf("expected ok=true in JSON output, got %#v", parsed)
+	}
 }
 
 func TestFormatResponseString(t *testing.T) {

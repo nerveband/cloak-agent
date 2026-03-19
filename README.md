@@ -38,21 +38,20 @@ The daemon uses CloakBrowser's patched Chromium binary. Fingerprints (GPU, scree
 ```bash
 git clone https://github.com/nerveband/cloak-agent.git
 cd cloak-agent
-cd daemon && npm install && cd ..
 make build
 ```
 
-This builds the Go binary (`./cloak-agent`) and compiles the daemon TypeScript.
+This builds the Go binary (`./cloak-agent`) and compiles the daemon TypeScript. The `install` flow below also installs daemon dependencies and checks the CloakBrowser runtime.
 
 ### Install globally
 
 ```bash
 make install
+# or, from a source checkout or an already installed binary layout:
+./cloak-agent install
 ```
 
-Copies the binary and daemon to `~/.cloak-agent/` and symlinks to `/usr/local/bin/`.
-
-The stealth Chromium binary (~200MB) downloads automatically on first run.
+Source installs copy the binary and daemon to `~/.cloak-agent/` and symlink to `/usr/local/bin/` when writable. Installed-layout runs bootstrap daemon production dependencies and runs `cloakbrowser install` if the stealth Chromium runtime is missing.
 
 ## Quick start
 
@@ -157,9 +156,32 @@ cloak-agent profile create shopping      # Persistent browser profile
 cloak-agent profile list                 # List profiles
 ```
 
+### Launch / daemon lifecycle
+
+Use `launch` when an agent wants to establish a session with explicit CloakBrowser options instead of generating ad-hoc Node scripts.
+
+```bash
+cloak-agent launch https://example.com \
+  --profile shopping \
+  --proxy http://proxy:8080 \
+  --timezone America/New_York \
+  --locale en-US \
+  --viewport 1440x900 \
+  --geoip \
+  --fingerprint-seed 42 \
+  --arg --disable-gpu
+
+cloak-agent daemon start
+cloak-agent daemon status
+cloak-agent daemon logs
+cloak-agent daemon restart
+cloak-agent daemon stop
+```
+
 ### Updates
 
 ```bash
+cloak-agent install                 # Bootstrap local daemon deps/browser runtime
 cloak-agent upgrade                 # Self-update to latest release
 cloak-agent version                 # Print current version
 ```
@@ -196,6 +218,16 @@ cloak-agent network route <url> --abort  # Block requests
 ## For AI agents
 
 cloak-agent follows the principles from [Rewrite Your CLI for AI Agents](https://justin.poehnelt.com/posts/rewrite-your-cli-for-ai-agents/).
+
+### Structured JSON I/O
+
+For machine-readable output, use `--output json` (or legacy `--json`). For machine-readable input, use `--input json` or `--input-file`.
+
+```bash
+cloak-agent --output json daemon status
+echo '{"action":"navigate","url":"https://example.com"}' | cloak-agent --input json --output json
+cloak-agent --input-file payload.json --output json
+```
 
 ### Raw JSON mode
 
@@ -245,8 +277,10 @@ The daemon validates all input from agents:
 | Flag | What it does |
 |------|-------------|
 | `--session <name>` | Named session (parallel browsers) |
-| `--json` | JSON output mode |
-| `--json '{...}'` | Raw JSON payload |
+| `--output json` | Stable machine-readable output |
+| `--json` | Alias for `--output json`; also works as legacy raw-JSON shorthand when followed by a JSON object |
+| `--input json` | Read command JSON from stdin |
+| `--input-file <path>` | Read command JSON from file |
 | `--timeout <ms>` | Command timeout |
 | `--headed` | Show browser window |
 | `--dry-run` | Validate without executing |

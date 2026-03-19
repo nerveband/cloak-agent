@@ -14,12 +14,15 @@ Refs like `@e1` come from `snapshot -i`. They change on navigation, so always re
 
 ```bash
 cloak-agent open <url>                    # Navigate to URL
+cloak-agent launch [url] [launch flags]   # Launch browser/session with explicit CloakBrowser options
 cloak-agent open <url> --wait networkidle # Wait for network idle after navigation
 cloak-agent back                          # Go back
 cloak-agent forward                       # Go forward
 cloak-agent reload                        # Reload page
 cloak-agent close                         # Close browser and stop daemon
 ```
+
+Launch accepts agent-friendly runtime flags like `--profile`, `--proxy`, `--timezone`, `--locale`, `--viewport`, `--geoip`, `--fingerprint-seed`, `--platform`, `--gpu-vendor`, `--gpu-renderer`, `--user-agent`, and repeatable `--arg`.
 
 ## Snapshots
 
@@ -258,6 +261,11 @@ Run multiple browsers in parallel with named sessions:
 cloak-agent --session a open https://site-a.com
 cloak-agent --session b open https://site-b.com
 cloak-agent session list               # Show active sessions
+cloak-agent daemon start               # Start daemon for session
+cloak-agent daemon status              # Inspect daemon state
+cloak-agent daemon logs                # Read daemon log
+cloak-agent daemon restart             # Restart daemon
+cloak-agent daemon stop                # Stop daemon
 ```
 
 ## Global flags
@@ -267,9 +275,20 @@ These work with any command:
 | Flag | Description |
 |------|-------------|
 | `--session <name>` | Named session (default: "default") |
-| `--json` | Output as JSON |
-| `--json '{...}'` | Send raw JSON payload to daemon |
+| `--output json` | Stable machine-readable output |
+| `--json` | Alias for `--output json`; also works as legacy raw-JSON shorthand |
+| `--input json` | Read command JSON from stdin |
+| `--input-file <path>` | Read command JSON from file |
 | `--timeout <ms>` | Command timeout in milliseconds |
 | `--headed` | Show the browser window |
 | `--dry-run` | Validate command without executing |
 | `--fields <list>` | Comma-separated list of fields to return |
+
+## Structured JSON examples
+
+```bash
+cloak-agent --output json daemon status
+echo '{"action":"navigate","url":"https://example.com"}' | cloak-agent --input json --output json
+cloak-agent --input-file payload.json --output json
+cloak-agent --json '{"action":"snapshot","interactive":true}'   # legacy shorthand
+```

@@ -20,7 +20,7 @@ func FormatResponse(resp Response, flags GlobalFlags) string {
 	}
 
 	// Error response.
-	if !resp.Success {
+	if !resp.IsSuccess() {
 		return "Error: " + resp.Error
 	}
 
@@ -80,7 +80,7 @@ func PrintResponse(resp Response, flags GlobalFlags) {
 		return
 	}
 
-	if !resp.Success && !flags.JSONOutput {
+	if !resp.IsSuccess() && !flags.JSONOutput {
 		fmt.Fprintln(os.Stderr, out)
 	} else {
 		fmt.Println(out)

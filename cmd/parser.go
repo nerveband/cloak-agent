@@ -10,7 +10,9 @@ import (
 // GlobalFlags holds CLI-wide flags extracted before the subcommand.
 type GlobalFlags struct {
 	Session    string // --session <name>, default "default"
-	JSONOutput bool   // --json (no payload = JSON output mode)
+	JSONOutput bool   // --json / --output json
+	InputMode  string // --input json
+	InputFile  string // --input-file <path>
 	Timeout    int    // --timeout <ms>
 	Headed     bool   // --headed
 	DryRun     bool   // --dry-run
@@ -32,6 +34,23 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string) {
 			}
 		case "--json":
 			gf.JSONOutput = true
+		case "--output":
+			if i+1 < len(args) {
+				if args[i+1] == "json" {
+					gf.JSONOutput = true
+				}
+				i++
+			}
+		case "--input":
+			if i+1 < len(args) {
+				gf.InputMode = args[i+1]
+				i++
+			}
+		case "--input-file":
+			if i+1 < len(args) {
+				gf.InputFile = args[i+1]
+				i++
+			}
 		case "--timeout":
 			if i+1 < len(args) {
 				if v, err := strconv.Atoi(args[i+1]); err == nil {
@@ -66,6 +85,91 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 	rest := args[1:]
 
 	switch cmd {
+
+	// ── launch / navigation ─────────────────────────────────────────────
+	case "launch":
+		m := map[string]interface{}{"action": "launch"}
+		for i := 0; i < len(rest); i++ {
+			switch rest[i] {
+			case "--headed":
+				m["headless"] = false
+			case "--profile":
+				if i+1 < len(rest) {
+					m["profile"] = rest[i+1]
+					i++
+				}
+			case "--proxy":
+				if i+1 < len(rest) {
+					m["proxy"] = rest[i+1]
+					i++
+				}
+			case "--timezone":
+				if i+1 < len(rest) {
+					m["timezone"] = rest[i+1]
+					i++
+				}
+			case "--locale":
+				if i+1 < len(rest) {
+					m["locale"] = rest[i+1]
+					i++
+				}
+			case "--geoip":
+				m["geoip"] = true
+			case "--fingerprint-seed":
+				if i+1 < len(rest) {
+					if n, err := strconv.Atoi(rest[i+1]); err == nil {
+						m["fingerprintSeed"] = n
+					}
+					i++
+				}
+			case "--platform":
+				if i+1 < len(rest) {
+					m["platform"] = rest[i+1]
+					i++
+				}
+			case "--gpu-vendor":
+				if i+1 < len(rest) {
+					m["gpuVendor"] = rest[i+1]
+					i++
+				}
+			case "--gpu-renderer":
+				if i+1 < len(rest) {
+					m["gpuRenderer"] = rest[i+1]
+					i++
+				}
+			case "--user-agent":
+				if i+1 < len(rest) {
+					m["userAgent"] = rest[i+1]
+					i++
+				}
+			case "--viewport":
+				if i+1 < len(rest) {
+					parts := strings.Split(strings.ToLower(rest[i+1]), "x")
+					if len(parts) == 2 {
+						if w, err := strconv.Atoi(parts[0]); err == nil {
+							if h, err := strconv.Atoi(parts[1]); err == nil {
+								m["viewport"] = map[string]interface{}{"width": w, "height": h}
+							}
+						}
+					}
+					i++
+				}
+			case "--arg":
+				if i+1 < len(rest) {
+					if existing, ok := m["args"].([]string); ok {
+						m["args"] = append(existing, rest[i+1])
+					} else {
+						m["args"] = []string{rest[i+1]}
+					}
+					i++
+				}
+			default:
+				if !strings.HasPrefix(rest[i], "--") {
+					m["url"] = rest[i]
+				}
+			}
+		}
+		return m, nil
 
 	// ── navigation ──────────────────────────────────────────────────────
 	case "open":
@@ -715,6 +819,25 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			return map[string]interface{}{"action": "session_list"}, nil
 		default:
 			return nil, fmt.Errorf("unknown session subcommand: %s", rest[0])
+		}
+
+	case "daemon":
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("daemon requires a subcommand")
+		}
+		switch rest[0] {
+		case "start":
+			return map[string]interface{}{"action": "daemon_start"}, nil
+		case "stop":
+			return map[string]interface{}{"action": "daemon_stop"}, nil
+		case "restart":
+			return map[string]interface{}{"action": "daemon_restart"}, nil
+		case "status":
+			return map[string]interface{}{"action": "daemon_status"}, nil
+		case "log", "logs":
+			return map[string]interface{}{"action": "daemon_logs"}, nil
+		default:
+			return nil, fmt.Errorf("unknown daemon subcommand: %s", rest[0])
 		}
 
 	default:

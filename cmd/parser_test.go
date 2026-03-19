@@ -46,6 +46,32 @@ func TestParseArgs_OpenURLWithWait(t *testing.T) {
 	assertEq(t, m, "waitUntil", "networkidle")
 }
 
+func TestParseArgs_LaunchWithOptions(t *testing.T) {
+	m, err := ParseArgs([]string{"launch", "https://example.com", "--profile", "shop", "--proxy", "http://proxy:8080", "--timezone", "America/New_York", "--locale", "en-US", "--viewport", "1440x900", "--geoip", "--fingerprint-seed", "42", "--arg", "--disable-gpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "launch")
+	assertEq(t, m, "url", "https://example.com")
+	assertEq(t, m, "profile", "shop")
+	assertEq(t, m, "proxy", "http://proxy:8080")
+	assertEq(t, m, "timezone", "America/New_York")
+	assertEq(t, m, "locale", "en-US")
+	assertEq(t, m, "geoip", true)
+	assertEq(t, m, "fingerprintSeed", 42)
+	vp, ok := m["viewport"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected viewport map, got %T", m["viewport"])
+	}
+	if fmt.Sprintf("%v", vp["width"]) != "1440" || fmt.Sprintf("%v", vp["height"]) != "900" {
+		t.Fatalf("unexpected viewport: %#v", vp)
+	}
+	args, ok := m["args"].([]string)
+	if !ok || len(args) != 1 || args[0] != "--disable-gpu" {
+		t.Fatalf("unexpected args: %#v", m["args"])
+	}
+}
+
 func TestParseArgs_SnapshotInteractive(t *testing.T) {
 	m, err := ParseArgs([]string{"snapshot", "-i"})
 	if err != nil {
@@ -282,6 +308,22 @@ func TestParseArgs_SchemaCommand(t *testing.T) {
 	assertEq(t, m, "command", "navigate")
 }
 
+func TestParseArgs_DaemonStart(t *testing.T) {
+	m, err := ParseArgs([]string{"daemon", "start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "daemon_start")
+}
+
+func TestParseArgs_DaemonStatus(t *testing.T) {
+	m, err := ParseArgs([]string{"daemon", "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "daemon_status")
+}
+
 func TestParseArgs_UnknownCommand(t *testing.T) {
 	_, err := ParseArgs([]string{"bogus"})
 	if err == nil {
@@ -342,6 +384,29 @@ func TestParseGlobalFlags_JSON(t *testing.T) {
 	}
 	if len(rest) != 1 || rest[0] != "close" {
 		t.Errorf("remaining args = %v, want [close]", rest)
+	}
+}
+
+func TestParseGlobalFlags_OutputAndInputFlags(t *testing.T) {
+	gf, rest := ParseGlobalFlags([]string{"--output", "json", "--input", "json", "open", "https://example.com"})
+	if !gf.JSONOutput {
+		t.Error("JSONOutput should be true when --output json is provided")
+	}
+	if gf.InputMode != "json" {
+		t.Errorf("InputMode = %q, want json", gf.InputMode)
+	}
+	if len(rest) != 2 || rest[0] != "open" || rest[1] != "https://example.com" {
+		t.Errorf("remaining args = %v, want [open https://example.com]", rest)
+	}
+}
+
+func TestParseGlobalFlags_InputFile(t *testing.T) {
+	gf, rest := ParseGlobalFlags([]string{"--input-file", "payload.json"})
+	if gf.InputFile != "payload.json" {
+		t.Errorf("InputFile = %q, want payload.json", gf.InputFile)
+	}
+	if len(rest) != 0 {
+		t.Errorf("remaining args = %v, want []", rest)
 	}
 }
 
