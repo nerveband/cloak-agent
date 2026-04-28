@@ -54,3 +54,21 @@ func TestInstallScriptBootstrapsCloakBrowser(t *testing.T) {
 		t.Fatalf("expected %s to run cloakbrowser install", scriptPath)
 	}
 }
+
+func TestInstallScriptAvoidsUsrLocalOnlyPath(t *testing.T) {
+	scriptPath := filepath.Join("..", "scripts", "install.sh")
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "path_contains") {
+		t.Fatalf("expected %s to detect whether install bin dir is already on PATH", scriptPath)
+	}
+	if !strings.Contains(text, "$HOME/.local/bin") {
+		t.Fatalf("expected %s to fall back to user-local bin directory", scriptPath)
+	}
+	if strings.Contains(text, `LINK_DIR="/usr/local/bin"`) {
+		t.Fatalf("expected %s not to rely only on /usr/local/bin", scriptPath)
+	}
+}

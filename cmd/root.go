@@ -42,8 +42,11 @@ func Execute(args []string) error {
 
 	// Handle upgrade subcommand
 	if args[0] == "upgrade" {
-		_, err := update.Upgrade(Version)
-		return err
+		if _, err := update.Upgrade(Version); err != nil {
+			return err
+		}
+		fmt.Println("Bootstrapping daemon dependencies and CloakBrowser runtime...")
+		return handleInstall()
 	}
 
 	// Handle version subcommand

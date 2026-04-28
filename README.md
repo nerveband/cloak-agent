@@ -51,7 +51,7 @@ make install
 ./cloak-agent install
 ```
 
-Source installs copy the binary and daemon to `~/.cloak-agent/`, install daemon production dependencies, run `cloakbrowser install`, and symlink to `/usr/local/bin/` when writable. Installed-layout runs the same daemon/bootstrap steps in place.
+Source installs copy the binary and daemon to `~/.cloak-agent/`, install daemon production dependencies, run `cloakbrowser install`, and expose `cloak-agent` through an existing writable PATH directory when possible. If no writable PATH directory exists, the installer links to `~/.local/bin` and prints the PATH line only when needed. Installed-layout installs run the same daemon/bootstrap steps in place.
 
 ## Quick start
 
@@ -188,7 +188,7 @@ cloak-agent daemon stop
 
 ```bash
 cloak-agent install                 # Bootstrap local daemon deps/browser runtime
-cloak-agent upgrade                 # Self-update to latest release
+cloak-agent upgrade                 # Self-update, then refresh daemon deps/browser runtime
 cloak-agent version                 # Print current version
 ```
 

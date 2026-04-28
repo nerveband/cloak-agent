@@ -242,7 +242,7 @@ cloak-agent profile list               # List all profiles
 ## Updates
 
 ```bash
-cloak-agent upgrade                    # Download and install the latest version
+cloak-agent upgrade                    # Download latest version and refresh runtime
 cloak-agent version                    # Print current version
 ```
 
