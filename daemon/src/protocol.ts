@@ -16,6 +16,7 @@ const modifiers = z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).optional(
 const buttonEnum = z.enum(['left', 'right', 'middle']).optional();
 const positionObj = z.object({ x: z.number(), y: z.number() }).optional();
 const viewportObj = z.object({ width: z.number(), height: z.number() });
+const looseRecord = z.record(z.unknown());
 const semanticSubactionEnum = z.enum([
   'count',
   'click',
@@ -59,12 +60,16 @@ const launch = z.object({
   gpuRenderer: z.string().optional(),
   proxy: proxySchema.optional(),
   profile: z.string().optional(),
+  humanize: z.boolean().optional(),
+  humanPreset: z.enum(['default', 'careful']).optional(),
+  humanConfig: looseRecord.optional(),
   userAgent: z.string().optional(),
   viewport: viewportObj.optional(),
   args: z.array(z.string()).optional(),
   executablePath: z.string().optional(),
   storageState: z.string().optional(),
   ignoreHTTPSErrors: z.boolean().optional(),
+  contextOptions: looseRecord.optional(),
 });
 
 const navigate = z.object({

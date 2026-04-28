@@ -1,8 +1,7 @@
 // BrowserManager — lifecycle, snapshots, tabs, and state for CloakBrowser + Playwright.
 
-import type { Browser, BrowserContext, Page, Frame } from 'playwright-core';
-import { chromium } from 'playwright-core';
-import { launch as cloakLaunch, ensureBinary } from 'cloakbrowser';
+import type { Browser, BrowserContext, BrowserContextOptions, Page, Frame } from 'playwright-core';
+import { launchContext, launchPersistentContext } from 'cloakbrowser';
 import { buildStealthArgs, ensureProfileDir } from './stealth.js';
 import { getEnhancedSnapshot, type RefData, type SnapshotOptions } from './snapshot.js';
 import { toAIFriendlyError } from './errors.js';
@@ -22,6 +21,11 @@ export interface BrowserLaunchOptions extends StealthOptions {
   ignoreHTTPSErrors?: boolean;
   locale?: string;
   timezone?: string;
+  geoip?: boolean;
+  humanize?: boolean;
+  humanPreset?: 'default' | 'careful';
+  humanConfig?: Record<string, unknown>;
+  contextOptions?: BrowserContextOptions;
 }
 
 // ── BrowserManager ──────────────────────────────────────────────────────────
@@ -40,11 +44,12 @@ export class BrowserManager {
   private routes: Map<string, true> = new Map();
   private isPersistentContext: boolean = false;
   private dialogHandler: ((dialog: any) => void) | null = null;
+  private lastLaunchOptions: BrowserLaunchOptions | null = null;
 
   // ── Query state ─────────────────────────────────────────────────────────
 
   isLaunched(): boolean {
-    return this.browser !== null || (this.isPersistentContext && this.contexts.length > 0);
+    return this.browser !== null || this.contexts.length > 0;
   }
 
   resolveRef(ref: string): RefData | null {
@@ -55,63 +60,64 @@ export class BrowserManager {
     return { ...this.refMap };
   }
 
+  getLastLaunchOptions(): BrowserLaunchOptions | null {
+    return this.lastLaunchOptions ? { ...this.lastLaunchOptions } : null;
+  }
+
   // ── Launch ──────────────────────────────────────────────────────────────
 
   async launch(options: BrowserLaunchOptions = {}): Promise<void> {
-    const executablePath = options.executablePath ?? await ensureBinary();
-    const stealthArgs = [...buildStealthArgs(options), ...(options.args ?? [])];
+    if (this.isLaunched()) {
+      await this.close({ preserveLaunchOptions: true });
+    }
+
+    const explicitStealthArgs = buildStealthArgs(options);
+    const args = [...explicitStealthArgs, ...(options.args ?? [])];
     const viewport = options.viewport ?? { width: 1920, height: 947 };
+    const contextOptions: BrowserContextOptions = {
+      ...(options.contextOptions ?? {}),
+      ...(options.storageState ? { storageState: options.storageState } : {}),
+      ...(options.ignoreHTTPSErrors !== undefined ? { ignoreHTTPSErrors: options.ignoreHTTPSErrors } : {}),
+    };
+
+    const baseOptions: Record<string, unknown> = {
+      headless: options.headless ?? true,
+      args,
+      locale: options.locale,
+      timezone: options.timezone,
+      userAgent: options.userAgent,
+      viewport,
+      proxy: options.proxy as any,
+      geoip: options.geoip,
+      humanize: options.humanize,
+      humanPreset: options.humanPreset,
+      humanConfig: options.humanConfig,
+      contextOptions,
+      launchOptions: options.executablePath ? { executablePath: options.executablePath } : undefined,
+    };
 
     if (options.profile) {
-      // Persistent context path — uses chromium.launchPersistentContext directly
       const userDataDir = ensureProfileDir(options.profile);
       this.isPersistentContext = true;
 
-      const launchOptions: Record<string, unknown> = {
-        executablePath,
-        args: stealthArgs,
-        headless: options.headless ?? true,
-        viewport,
-        userAgent: options.userAgent,
-        proxy: typeof options.proxy === 'string' ? { server: options.proxy } : options.proxy,
-        ignoreHTTPSErrors: options.ignoreHTTPSErrors ?? false,
-        locale: options.locale,
-        timezoneId: options.timezone,
-      };
-
-      const context = await chromium.launchPersistentContext(userDataDir, launchOptions as any);
-
+      const context = await launchPersistentContext({
+        ...baseOptions,
+        userDataDir,
+      } as any);
       this.contexts.push(context);
       const page = context.pages()[0] ?? await context.newPage();
       this.pages.push(page);
       this.setupPageListeners(page);
     } else {
-      // Standard path — use cloakbrowser's launch()
-      const browser = await cloakLaunch({
-        headless: options.headless ?? true,
-        args: stealthArgs,
-        executablePath,
-        locale: options.locale,
-        timezone: options.timezone,
-        userAgent: options.userAgent,
-        proxy: options.proxy as any,
-      } as any);
-      this.browser = browser;
-
-      const context = await browser.newContext({
-        viewport,
-        userAgent: options.userAgent,
-        proxy: typeof options.proxy === 'string' ? { server: options.proxy } : options.proxy,
-        storageState: options.storageState,
-        ignoreHTTPSErrors: options.ignoreHTTPSErrors ?? false,
-        locale: options.locale,
-      });
+      const context = await launchContext(baseOptions as any);
       this.contexts.push(context);
 
       const page = await context.newPage();
       this.pages.push(page);
       this.setupPageListeners(page);
     }
+
+    this.lastLaunchOptions = { ...options };
   }
 
   // ── Page listeners ──────────────────────────────────────────────────────
@@ -310,7 +316,7 @@ export class BrowserManager {
 
   // ── Teardown ────────────────────────────────────────────────────────────
 
-  async close(): Promise<void> {
+  async close(options: { preserveLaunchOptions?: boolean } = {}): Promise<void> {
     for (const context of this.contexts) {
       try {
         await context.close();
@@ -341,5 +347,8 @@ export class BrowserManager {
     this.routes = new Map();
     this.isPersistentContext = false;
     this.dialogHandler = null;
+    if (!options.preserveLaunchOptions) {
+      this.lastLaunchOptions = null;
+    }
   }
 }

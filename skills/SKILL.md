@@ -33,7 +33,7 @@ Installs to `~/.cloak-agent/` and symlinks to `/usr/local/bin/`. The stealth Chr
 ### Prerequisites
 
 - Go 1.22+
-- Node.js 18+
+- Node.js 20+
 - npm
 
 ## Quick start
@@ -433,7 +433,7 @@ cloak-agent stealth status
 - **Blocked by overlay:** Dismiss modals/cookie banners first, then retry.
 - **Click fails:** Try `scrollintoview @e1` before clicking. Use `--headed` to debug visually.
 - **Detection failing:** Run `stealth status` to check. Try `fingerprint rotate` for a fresh identity.
-- **Daemon not starting:** Check Node.js 18+ is installed. Check `~/.cloak-agent/` for socket files.
+- **Daemon not starting:** Check Node.js 20+ is installed. Check `~/.cloak-agent/` for socket files.
 
 ## Notes
 

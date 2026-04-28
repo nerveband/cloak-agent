@@ -243,7 +243,7 @@ func handleInstall() error {
 		name    string
 		message string
 	}{
-		{"node", "node not found in PATH; install Node.js 18+ to run cloak-agent install"},
+		{"node", "node not found in PATH; install Node.js 20+ to run cloak-agent install"},
 		{"npm", "npm not found in PATH; install npm to bootstrap cloak-agent"},
 		{"npx", "npx not found in PATH; install npm to run cloakbrowser install"},
 	} {
@@ -472,6 +472,9 @@ Launch flags:
   --locale <tag>                 Locale, e.g. en-US
   --viewport <WxH>               Viewport, e.g. 1440x900
   --geoip                        Align geolocation with proxy/IP
+  --humanize                     Enable human-like mouse/keyboard/scroll behavior
+  --human-preset <name>          Human behavior preset: default or careful
+  --human-config <json>          Human behavior config JSON object
   --fingerprint-seed <n>         Deterministic fingerprint seed
   --platform <name>              Override platform hint
   --gpu-vendor <name>            Override GPU vendor
@@ -480,6 +483,7 @@ Launch flags:
   --executable-path <path>       Use a specific browser executable
   --storage-state <path>         Apply Playwright storage state on launch
   --ignore-https-errors          Ignore TLS certificate errors
+  --context-options <json>       Extra Playwright context options JSON object
   --arg <flag>                   Extra Chromium/CloakBrowser arg (repeatable)
 
 Made by Ashraf (https://ashrafali.net)`)

@@ -12,7 +12,7 @@ require_command() {
     fi
 }
 
-require_command node "Install Node.js 18+ to bootstrap cloak-agent."
+require_command node "Install Node.js 20+ to bootstrap cloak-agent."
 require_command npm "Install npm to bootstrap cloak-agent."
 require_command npx "Install npm to run cloakbrowser install."
 

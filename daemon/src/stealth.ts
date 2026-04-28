@@ -9,8 +9,6 @@ export interface StealthOptions {
   platform?: 'windows' | 'macos' | 'linux';
   gpuVendor?: string;
   gpuRenderer?: string;
-  timezone?: string;
-  locale?: string;
   args?: string[];
 }
 
@@ -23,24 +21,6 @@ export interface StealthConfig {
 
 export const DATA_DIR = path.join(os.homedir(), '.cloak-agent');
 export const PROFILES_DIR = path.join(DATA_DIR, 'profiles');
-
-// ── Platform-aware GPU defaults ────────────────────────────────────────────────
-
-const GPU_DEFAULTS: Record<string, { vendor: string; renderer: string }> = {
-  macos: {
-    vendor: 'Google Inc. (Apple)',
-    renderer:
-      'ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)',
-  },
-  windows: {
-    vendor: 'NVIDIA Corporation',
-    renderer: 'NVIDIA GeForce RTX 3070',
-  },
-  linux: {
-    vendor: 'NVIDIA Corporation',
-    renderer: 'NVIDIA GeForce RTX 3070',
-  },
-};
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -65,37 +45,24 @@ export function getDefaultStealthConfig(): StealthConfig {
 }
 
 /**
- * Build a deduplicated list of Chromium CLI args that configure CloakBrowser's
- * stealth fingerprinting layer.
+ * Convert cloak-agent's legacy explicit fingerprint overrides to Chromium args.
+ * CloakBrowser owns default stealth args; this only preserves compatibility for
+ * callers who deliberately set seed/platform/GPU overrides.
  */
 export function buildStealthArgs(options: StealthOptions): string[] {
-  const seed =
-    options.fingerprintSeed ??
-    Math.floor(Math.random() * 90000) + 10000; // 10000–99999
+  const args: string[] = [];
 
-  const platform =
-    options.platform ?? (isMac ? 'macos' : 'windows');
-
-  const gpu = GPU_DEFAULTS[platform] ?? GPU_DEFAULTS['windows'];
-  const gpuVendor = options.gpuVendor ?? gpu.vendor;
-  const gpuRenderer = options.gpuRenderer ?? gpu.renderer;
-
-  // Base args
-  const args: string[] = [
-    '--no-sandbox',
-    '--disable-blink-features=AutomationControlled',
-    `--fingerprint=${seed}`,
-    `--fingerprint-platform=${platform}`,
-    `--fingerprint-gpu-vendor=${gpuVendor}`,
-    `--fingerprint-gpu-renderer=${gpuRenderer}`,
-  ];
-
-  // Optional args
-  if (options.timezone) {
-    args.push(`--fingerprint-timezone=${options.timezone}`);
+  if (options.fingerprintSeed !== undefined) {
+    args.push(`--fingerprint=${options.fingerprintSeed}`);
   }
-  if (options.locale) {
-    args.push(`--lang=${options.locale}`);
+  if (options.platform) {
+    args.push(`--fingerprint-platform=${options.platform}`);
+  }
+  if (options.gpuVendor) {
+    args.push(`--fingerprint-gpu-vendor=${options.gpuVendor}`);
+  }
+  if (options.gpuRenderer) {
+    args.push(`--fingerprint-gpu-renderer=${options.gpuRenderer}`);
   }
 
   // Merge user-supplied args with deduplication (by key before `=`).

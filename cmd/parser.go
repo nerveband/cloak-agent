@@ -115,6 +115,22 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 				}
 			case "--geoip":
 				m["geoip"] = true
+			case "--humanize":
+				m["humanize"] = true
+			case "--human-preset":
+				if i+1 < len(rest) {
+					m["humanPreset"] = rest[i+1]
+					i++
+				}
+			case "--human-config":
+				if i+1 < len(rest) {
+					var cfg map[string]interface{}
+					if err := json.Unmarshal([]byte(rest[i+1]), &cfg); err != nil {
+						return nil, fmt.Errorf("--human-config requires a JSON object: %w", err)
+					}
+					m["humanConfig"] = cfg
+					i++
+				}
 			case "--fingerprint-seed":
 				if i+1 < len(rest) {
 					if n, err := strconv.Atoi(rest[i+1]); err == nil {
@@ -154,6 +170,15 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 				}
 			case "--ignore-https-errors":
 				m["ignoreHTTPSErrors"] = true
+			case "--context-options":
+				if i+1 < len(rest) {
+					var opts map[string]interface{}
+					if err := json.Unmarshal([]byte(rest[i+1]), &opts); err != nil {
+						return nil, fmt.Errorf("--context-options requires a JSON object: %w", err)
+					}
+					m["contextOptions"] = opts
+					i++
+				}
 			case "--viewport":
 				if i+1 < len(rest) {
 					parts := strings.Split(strings.ToLower(rest[i+1]), "x")

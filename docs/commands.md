@@ -22,7 +22,7 @@ cloak-agent reload                        # Reload page
 cloak-agent close                         # Close browser and stop daemon
 ```
 
-Launch accepts agent-friendly runtime flags like `--profile`, `--proxy`, `--timezone`, `--locale`, `--viewport`, `--geoip`, `--fingerprint-seed`, `--platform`, `--gpu-vendor`, `--gpu-renderer`, `--user-agent`, `--executable-path`, `--storage-state`, `--ignore-https-errors`, and repeatable `--arg`.
+Launch accepts agent-friendly runtime flags like `--profile`, `--proxy`, `--timezone`, `--locale`, `--viewport`, `--geoip`, `--humanize`, `--human-preset`, `--human-config`, `--fingerprint-seed`, `--platform`, `--gpu-vendor`, `--gpu-renderer`, `--user-agent`, `--executable-path`, `--storage-state`, `--ignore-https-errors`, `--context-options`, and repeatable `--arg`.
 
 ## Snapshots
 

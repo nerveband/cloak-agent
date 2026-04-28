@@ -30,7 +30,7 @@ The daemon uses CloakBrowser's patched Chromium binary. Fingerprints (GPU, scree
 ### Prerequisites
 
 - Go 1.22+
-- Node.js 18+
+- Node.js 20+
 - npm
 
 ### From source
@@ -170,6 +170,9 @@ cloak-agent launch https://example.com \
   --user-agent CustomAgent/1.0 \
   --storage-state state.json \
   --geoip \
+  --humanize \
+  --human-preset careful \
+  --context-options '{"permissions":["geolocation"]}' \
   --fingerprint-seed 42 \
   --ignore-https-errors \
   --arg --disable-gpu

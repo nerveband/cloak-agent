@@ -10,7 +10,7 @@ import type { Command, Response } from './protocol.js';
 import { successResponse, errorResponse, dumpSchema, dumpAllSchemas } from './protocol.js';
 import { BrowserManager } from './browser.js';
 import { toAIFriendlyError, validateFilePath } from './errors.js';
-import { listProfiles, ensureProfileDir, buildStealthArgs } from './stealth.js';
+import { listProfiles, ensureProfileDir } from './stealth.js';
 import { getSnapshotStats, parseRef } from './snapshot.js';
 
 // ---------------------------------------------------------------------------
@@ -165,6 +165,10 @@ export async function executeCommand(
         if (command.gpuVendor) launchOpts.gpuVendor = command.gpuVendor;
         if (command.gpuRenderer) launchOpts.gpuRenderer = command.gpuRenderer;
         if (command.proxy) launchOpts.proxy = command.proxy;
+        if ((command as any).humanize !== undefined) launchOpts.humanize = (command as any).humanize;
+        if ((command as any).humanPreset) launchOpts.humanPreset = (command as any).humanPreset;
+        if ((command as any).humanConfig) launchOpts.humanConfig = (command as any).humanConfig;
+        if ((command as any).contextOptions) launchOpts.contextOptions = (command as any).contextOptions;
         if ((command as any).args) launchOpts.args = (command as any).args;
         if ((command as any).userAgent) launchOpts.userAgent = (command as any).userAgent;
         if ((command as any).viewport) launchOpts.viewport = (command as any).viewport;
@@ -1310,20 +1314,17 @@ export async function executeCommand(
         if (command.dryRun) {
           return dryRun(id, 'Close browser and relaunch with a new fingerprint seed');
         }
-        // Close current browser instance
-        await browser.close();
         // Determine new seed
         const newSeed = command.seed ?? Math.floor(Math.random() * 90000) + 10000;
-        // Relaunch with the new seed
-        await browser.launch({ fingerprintSeed: newSeed } as any);
+        const previousOptions = browser.getLastLaunchOptions() ?? {};
+        // Close current browser instance, preserving the launch options for this relaunch.
+        await browser.close({ preserveLaunchOptions: true });
+        await browser.launch({ ...previousOptions, fingerprintSeed: newSeed } as any);
         // Report the new fingerprint info
-        const stealthArgs = buildStealthArgs({ fingerprintSeed: newSeed });
         return successResponse(id, {
           rotated: true,
           seed: newSeed,
-          fingerprintArg:
-            stealthArgs.find((a) => a.startsWith('--fingerprint=')) ??
-            `--fingerprint=${newSeed}`,
+          fingerprintArg: `--fingerprint=${newSeed}`,
         });
       }
 

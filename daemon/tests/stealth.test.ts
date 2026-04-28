@@ -2,11 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { buildStealthArgs, getProfileDir, listProfiles, getDefaultStealthConfig } from '../src/stealth.js';
 
 describe('buildStealthArgs', () => {
-  it('generates args with random fingerprint seed', () => {
+  it('does not duplicate CloakBrowser default stealth args', () => {
     const args = buildStealthArgs({});
-    expect(args.some(a => a.startsWith('--fingerprint='))).toBe(true);
-    expect(args).toContain('--no-sandbox');
-    expect(args).toContain('--disable-blink-features=AutomationControlled');
+    expect(args).toEqual([]);
   });
 
   it('uses provided fingerprint seed', () => {
@@ -17,13 +15,11 @@ describe('buildStealthArgs', () => {
   it('sets macos platform with Apple GPU', () => {
     const args = buildStealthArgs({ platform: 'macos' });
     expect(args).toContain('--fingerprint-platform=macos');
-    expect(args.some(a => a.includes('Apple'))).toBe(true);
   });
 
-  it('sets windows platform with NVIDIA GPU', () => {
+  it('sets windows platform only when explicitly requested', () => {
     const args = buildStealthArgs({ platform: 'windows' });
     expect(args).toContain('--fingerprint-platform=windows');
-    expect(args.some(a => a.includes('NVIDIA'))).toBe(true);
   });
 
   it('allows custom GPU', () => {
@@ -38,10 +34,9 @@ describe('buildStealthArgs', () => {
     expect(args).toContain('--custom=true');
   });
 
-  it('sets timezone and locale', () => {
-    const args = buildStealthArgs({ timezone: 'America/New_York', locale: 'en-US' });
+  it('leaves timezone and locale to upstream CloakBrowser options', () => {
+    const args = buildStealthArgs({ args: ['--fingerprint-timezone=America/New_York'] });
     expect(args).toContain('--fingerprint-timezone=America/New_York');
-    expect(args).toContain('--lang=en-US');
   });
 });
 

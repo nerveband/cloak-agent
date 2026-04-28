@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "main": "dist/daemon.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -11,7 +14,7 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "cloakbrowser": "^0.3.18",
+    "cloakbrowser": "^0.3.26",
     "playwright-core": "^1.57.0",
     "ws": "^8.19.0",
     "zod": "^3.22.4"

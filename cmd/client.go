@@ -260,7 +260,7 @@ func StartDaemon(session string) error {
 
 	nodePath, err := exec.LookPath("node")
 	if err != nil {
-		return fmt.Errorf("node not found in PATH; install Node.js 18+ to run cloak-agent")
+		return fmt.Errorf("node not found in PATH; install Node.js 20+ to run cloak-agent")
 	}
 
 	cmd := exec.Command(nodePath, daemonJS)

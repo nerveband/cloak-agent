@@ -79,6 +79,10 @@ func TestParseArgs_LaunchWithAdvancedOptions(t *testing.T) {
 		"--executable-path", "/tmp/cloakbrowser",
 		"--storage-state", "state.json",
 		"--ignore-https-errors",
+		"--humanize",
+		"--human-preset", "careful",
+		"--human-config", `{"clickDelay":120}`,
+		"--context-options", `{"permissions":["geolocation"]}`,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -88,6 +92,20 @@ func TestParseArgs_LaunchWithAdvancedOptions(t *testing.T) {
 	assertEq(t, m, "executablePath", "/tmp/cloakbrowser")
 	assertEq(t, m, "storageState", "state.json")
 	assertEq(t, m, "ignoreHTTPSErrors", true)
+	assertEq(t, m, "humanize", true)
+	assertEq(t, m, "humanPreset", "careful")
+	humanConfig, ok := m["humanConfig"].(map[string]interface{})
+	if !ok || fmt.Sprintf("%v", humanConfig["clickDelay"]) != "120" {
+		t.Fatalf("unexpected humanConfig: %#v", m["humanConfig"])
+	}
+	contextOptions, ok := m["contextOptions"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected contextOptions: %#v", m["contextOptions"])
+	}
+	permissions, ok := contextOptions["permissions"].([]interface{})
+	if !ok || len(permissions) != 1 || permissions[0] != "geolocation" {
+		t.Fatalf("unexpected permissions: %#v", contextOptions["permissions"])
+	}
 }
 
 func TestParseArgs_SnapshotInteractive(t *testing.T) {

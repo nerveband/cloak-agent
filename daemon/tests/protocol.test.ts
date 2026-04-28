@@ -50,6 +50,10 @@ describe('parseCommand', () => {
         gpuVendor: 'NVIDIA',
         gpuRenderer: 'GeForce RTX 3090',
         profile: 'default',
+        humanize: true,
+        humanPreset: 'careful',
+        humanConfig: { clickDelay: 120 },
+        contextOptions: { permissions: ['geolocation'] },
       })
     );
     expect(result.ok).toBe(true);
@@ -61,6 +65,10 @@ describe('parseCommand', () => {
       expect(cmd.proxy.server).toBe('http://proxy:8080');
       expect(cmd.platform).toBe('linux');
       expect(cmd.profile).toBe('default');
+      expect(cmd.humanize).toBe(true);
+      expect(cmd.humanPreset).toBe('careful');
+      expect(cmd.humanConfig).toEqual({ clickDelay: 120 });
+      expect(cmd.contextOptions).toEqual({ permissions: ['geolocation'] });
     }
   });
 
@@ -273,6 +281,12 @@ describe('dumpSchema', () => {
     expect(schema!.executablePath).toEqual({ type: 'string', required: false });
     expect(schema!.storageState).toEqual({ type: 'string', required: false });
     expect(schema!.ignoreHTTPSErrors).toEqual({ type: 'boolean', required: false });
+    expect(schema!.humanize).toEqual({ type: 'boolean', required: false });
+    expect(schema!.humanPreset).toEqual(
+      expect.objectContaining({ type: 'enum', required: false })
+    );
+    expect(schema!.humanConfig).toEqual({ type: 'record', required: false });
+    expect(schema!.contextOptions).toEqual({ type: 'record', required: false });
   });
 });
 
