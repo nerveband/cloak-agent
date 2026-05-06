@@ -228,7 +228,7 @@ cloak-agent follows the principles from [Rewrite Your CLI for AI Agents](https:/
 
 ### Structured JSON I/O
 
-For machine-readable output, use `--output json` (or legacy `--json`). For machine-readable input, use `--input json` or `--input-file`.
+For machine-readable output, use `--output json` (or legacy `--json`). When stdout is piped, cloak-agent defaults to JSON unless `--output human` is set. For machine-readable input, use `--input json` or `--input-file`.
 
 ```bash
 cloak-agent --output json daemon status
@@ -265,10 +265,13 @@ cloak-agent --dry-run open https://example.com
 
 ### Context window discipline
 
-Limit response size with `--fields`:
+Limit response size with `--fields`, `--limit`, `--id-only`, `--count`, and snapshot depth controls:
 
 ```bash
 cloak-agent --fields "url,title" get title
+cloak-agent --output json --limit 5 network requests
+cloak-agent --output json --count profile list
+cloak-agent snapshot -i -c --max-depth 3
 ```
 
 Every snapshot response includes a token count estimate so agents can decide whether to request more detail or scope down.
@@ -286,18 +289,37 @@ The daemon validates all input from agents:
 |------|-------------|
 | `--session <name>` | Named session (parallel browsers) |
 | `--output json` | Stable machine-readable output |
+| `--output human` | Force human output even when stdout is piped |
 | `--json` | Alias for `--output json`; also works as legacy raw-JSON shorthand when followed by a JSON object |
+| `--quiet`, `-q` | Suppress update notices and status noise |
 | `--input json` | Read command JSON from stdin |
 | `--input-file <path>` | Read command JSON from file |
 | `--timeout <ms>` | Command timeout |
 | `--headed` | Show browser window |
 | `--dry-run` | Validate without executing |
+| `--yes`, `-y`, `--force` | Non-interactive confirmation flag for future destructive flows |
 | `--fields <list>` | Limit response fields |
+| `--limit <n>` | Limit collection output |
+| `--id-only` | Return only identifiers where possible |
+| `--count` | Return counts for collections where possible |
+
+### Structured errors and exit codes
+
+JSON errors include `code`, `message`, `hint`, and `retryable`.
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `64` | Validation or input error |
+| `69` | Daemon, browser, or network error |
+| `70` | Timeout |
+| `1` | Internal or command failure |
 
 ## Troubleshooting
 
 - `node` or `npm` missing: `cloak-agent install` now fails early with a direct prerequisite message instead of a shell stack trace.
 - Daemon startup failure: run `cloak-agent --output json daemon status` and `cloak-agent --output json daemon logs` to inspect the socket path, pid file, and latest log output.
+- Install/runtime mismatch: run `cloak-agent --output json doctor`.
 - CloakBrowser missing: run `cloak-agent install`; source installs and installed-layout installs both run `npx cloakbrowser install`.
 - Working from a source checkout: the repo-built `./cloak-agent` now resolves `daemon/dist/daemon.js` from the checkout itself, so smoke tests and local development use the current code instead of an older installed daemon copy.
 

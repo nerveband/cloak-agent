@@ -15,12 +15,17 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.1.3"
+var Version = "0.1.4"
 
 func Execute(args []string) error {
 	if len(args) == 0 {
 		printUsage()
 		return nil
+	}
+
+	flags, remaining := ParseGlobalFlags(args)
+	if flags.JSONOutput || (!flags.HumanOutput && WantsJSON(args)) {
+		flags.JSONOutput = true
 	}
 
 	// Handle --version
@@ -33,6 +38,12 @@ func Execute(args []string) error {
 	if args[0] == "--help" || args[0] == "-h" {
 		printUsage()
 		return nil
+	}
+	for _, arg := range args[1:] {
+		if arg == "--help" || arg == "-h" {
+			printUsage()
+			return nil
+		}
 	}
 
 	// Handle install subcommand
@@ -57,12 +68,9 @@ func Execute(args []string) error {
 
 	// Start async update check for non-meta commands
 	var updateCh <-chan update.CheckResult
-	if update.ShouldCheckUpdates(args) {
+	if update.ShouldCheckUpdates(args) && !flags.Quiet {
 		updateCh = update.CheckAsync(Version)
 	}
-
-	// Parse global flags
-	flags, remaining := ParseGlobalFlags(args)
 
 	if len(remaining) == 0 && flags.InputFile == "" && flags.InputMode == "" {
 		printUsage()
@@ -155,7 +163,7 @@ func Execute(args []string) error {
 	}
 
 	if !resp.IsSuccess() {
-		os.Exit(1)
+		return NewCLIError("command_failed", resp.Error, "Inspect the command response, re-snapshot stale refs, or run with --dry-run before mutating actions.", false, ExitInternal)
 	}
 
 	return nil
@@ -180,6 +188,8 @@ func executeSpecialCommand(command map[string]interface{}, flags GlobalFlags) (b
 		return true, handleDaemonStatus(flags)
 	case "daemon_logs":
 		return true, handleDaemonLogs(flags)
+	case "doctor":
+		return true, handleDoctor(flags)
 	default:
 		return false, nil
 	}
@@ -201,8 +211,19 @@ func applyGlobalCommandFlags(command map[string]interface{}, flags GlobalFlags) 
 			command["headless"] = false
 		}
 	}
+	if flags.Limit > 0 {
+		command["limit"] = flags.Limit
+	}
+	if flags.CountOnly {
+		command["countOnly"] = true
+	}
+	if flags.IDOnly {
+		command["idOnly"] = true
+	}
+	if flags.Yes {
+		command["yes"] = true
+	}
 }
-
 
 func generateID() string {
 	b := make([]byte, 4)
@@ -400,6 +421,40 @@ func handleDaemonLogs(flags GlobalFlags) error {
 	return nil
 }
 
+func handleDoctor(flags GlobalFlags) error {
+	nodePath, nodeErr := exec.LookPath("node")
+	npmPath, npmErr := exec.LookPath("npm")
+	npxPath, npxErr := exec.LookPath("npx")
+	daemonDir := findInstalledDaemonDir()
+	daemonJS, daemonErr := findDaemonJS()
+	data := map[string]interface{}{
+		"version":           Version,
+		"appDir":            GetAppDir(),
+		"socketDir":         GetSocketDir(),
+		"session":           flags.Session,
+		"daemonRunning":     IsDaemonRunning(flags.Session),
+		"installedDaemon":   daemonDir,
+		"daemonJS":          daemonJS,
+		"daemonJSError":     "",
+		"node":              nodePath,
+		"npm":               npmPath,
+		"npx":               npxPath,
+		"cloakBrowserCache": filepath.Join(os.Getenv("HOME"), ".cloakbrowser"),
+		"checks": map[string]bool{
+			"node":       nodeErr == nil,
+			"npm":        npmErr == nil,
+			"npx":        npxErr == nil,
+			"daemonDir":  daemonDir != "",
+			"daemonFile": daemonErr == nil,
+		},
+	}
+	if daemonErr != nil {
+		data["daemonJSError"] = daemonErr.Error()
+	}
+	printSpecialResponse(flags, data)
+	return nil
+}
+
 func ioReadAll(f *os.File) ([]byte, error) {
 	var buf bytes.Buffer
 	_, err := buf.ReadFrom(f)
@@ -415,6 +470,12 @@ Usage:
   cloak-agent --input json [--output json] < payload.json
   cloak-agent --input-file payload.json [--output json]
   cloak-agent --json '{"action":"navigate","url":"..."}'   # legacy shorthand
+
+Examples:
+  cloak-agent open https://example.com
+  cloak-agent snapshot -i -c --max-depth 3
+  cloak-agent --output json doctor
+  cloak-agent --dry-run click @e1
 
 Navigation:
   open <url>                     Navigate to URL
@@ -433,6 +494,7 @@ Interaction:
 
 Inspection:
   snapshot [-i] [-c] [-d N]      Get page structure with @refs
+  snapshot --max-depth N         Alias for snapshot -d N
   get title|url|text|html|value  Get page/element info
   screenshot [path] [--full]     Take screenshot
   is visible|enabled|checked     Check element state
@@ -441,6 +503,7 @@ Daemon / sessions:
   daemon start|stop|restart      Manage persistent daemon for a session
   daemon status|logs             Inspect daemon state and logs
   session list                   List known sessions
+  doctor                         Check install, daemon, Node, and browser runtime
 
 Stealth (cloak-agent exclusive):
   stealth status                 Run bot detection tests
@@ -460,13 +523,22 @@ Updates:
 Global Flags:
   --session <name>               Use named session (default: "default")
   --output json                  Stable machine-readable output
+  --output human                 Force human output even when stdout is piped
   --json                         Alias for --output json
+  --quiet, -q                    Suppress update notices and status noise
   --input json                   Read command JSON from stdin
   --input-file <path>            Read command JSON from file
   --timeout <ms>                 Command timeout
   --headed                       Show browser window
   --dry-run                      Validate without executing
+  --yes, -y, --force             Non-interactive confirmation flag
   --fields <list>                Limit response fields (human mode)
+  --limit <n>                    Limit collection output
+  --id-only                      Return only identifiers where possible
+  --count                        Return counts for collections where possible
+
+Exit codes:
+  0 success, 64 validation/input, 69 daemon/browser/network, 70 timeout, 1 internal/command failure
 
 Launch flags:
   --profile <name>               Persistent profile name

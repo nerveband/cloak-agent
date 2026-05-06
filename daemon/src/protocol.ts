@@ -432,8 +432,32 @@ export function dumpSchema(action: string): Record<string, any> | null {
     }
     result[key] = entry;
   }
+  result._meta = safetyMetadata(action);
 
   return result;
+}
+
+function safetyMetadata(action: string): Record<string, boolean | string> {
+  const mutating = new Set([
+    'launch', 'navigate', 'back', 'forward', 'reload', 'close',
+    'click', 'fill', 'type', 'check', 'uncheck', 'hover', 'focus', 'dblclick',
+    'select', 'upload', 'drag', 'press', 'keydown', 'keyup', 'scroll',
+    'scrollintoview', 'tab_new', 'tab_switch', 'tab_close', 'cookies_set',
+    'cookies_clear', 'storage_set', 'storage_clear', 'dialog', 'route',
+    'unroute', 'viewport', 'device', 'geolocation', 'headers', 'credentials',
+    'offline', 'emulatemedia', 'state_load', 'highlight', 'trace_start',
+    'trace_stop', 'recording_start', 'recording_stop', 'fingerprint_rotate',
+    'profile_create',
+  ]);
+  const destructive = new Set(['close', 'tab_close', 'cookies_clear', 'storage_clear', 'unroute', 'fingerprint_rotate']);
+  const idempotent = new Set(['profile_create', 'profile_list', 'schema', 'url', 'title', 'snapshot', 'requests', 'console', 'errors']);
+  return {
+    readonly: !mutating.has(action),
+    mutating: mutating.has(action),
+    destructive: destructive.has(action),
+    idempotent: idempotent.has(action) || !mutating.has(action),
+    supportsDryRun: true,
+  };
 }
 
 /**

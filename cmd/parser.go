@@ -9,14 +9,20 @@ import (
 
 // GlobalFlags holds CLI-wide flags extracted before the subcommand.
 type GlobalFlags struct {
-	Session    string // --session <name>, default "default"
-	JSONOutput bool   // --json / --output json
-	InputMode  string // --input json
-	InputFile  string // --input-file <path>
-	Timeout    int    // --timeout <ms>
-	Headed     bool   // --headed
-	DryRun     bool   // --dry-run
-	Fields     string // --fields <comma-separated list>
+	Session     string // --session <name>, default "default"
+	JSONOutput  bool   // --json / --output json
+	HumanOutput bool   // --output human
+	Quiet       bool   // --quiet / -q
+	InputMode   string // --input json
+	InputFile   string // --input-file <path>
+	Timeout     int    // --timeout <ms>
+	Headed      bool   // --headed
+	DryRun      bool   // --dry-run
+	Fields      string // --fields <comma-separated list>
+	Limit       int    // --limit <n>
+	IDOnly      bool   // --id-only
+	CountOnly   bool   // --count
+	Yes         bool   // --yes / -y
 }
 
 // ParseGlobalFlags extracts global flags from args and returns the remaining
@@ -39,8 +45,13 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string) {
 				if args[i+1] == "json" {
 					gf.JSONOutput = true
 				}
+				if args[i+1] == "human" {
+					gf.HumanOutput = true
+				}
 				i++
 			}
+		case "--quiet", "-q":
+			gf.Quiet = true
 		case "--input":
 			if i+1 < len(args) {
 				gf.InputMode = args[i+1]
@@ -62,11 +73,24 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string) {
 			gf.Headed = true
 		case "--dry-run":
 			gf.DryRun = true
+		case "--yes", "-y", "--force":
+			gf.Yes = true
 		case "--fields":
 			if i+1 < len(args) {
 				gf.Fields = args[i+1]
 				i++
 			}
+		case "--limit":
+			if i+1 < len(args) {
+				if v, err := strconv.Atoi(args[i+1]); err == nil {
+					gf.Limit = v
+				}
+				i++
+			}
+		case "--id-only":
+			gf.IDOnly = true
+		case "--count":
+			gf.CountOnly = true
 		default:
 			rest = append(rest, args[i])
 		}
@@ -230,6 +254,8 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		return map[string]interface{}{"action": "reload"}, nil
 	case "close":
 		return map[string]interface{}{"action": "close"}, nil
+	case "doctor":
+		return map[string]interface{}{"action": "doctor"}, nil
 
 	// ── snapshot ────────────────────────────────────────────────────────
 	case "snapshot":
@@ -240,7 +266,7 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 				m["interactive"] = true
 			case "-c":
 				m["compact"] = true
-			case "-d":
+			case "-d", "--max-depth":
 				if i+1 < len(rest) {
 					if n, err := strconv.Atoi(rest[i+1]); err == nil {
 						m["maxDepth"] = n

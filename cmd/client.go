@@ -343,7 +343,15 @@ func SendCommand(session string, command []byte, timeout time.Duration) ([]byte,
 
 	conn, err := net.DialTimeout(network, socketPath, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to daemon: %w", err)
+		_ = os.Remove(GetSocketPath(session))
+		_ = os.Remove(GetPidFile(session))
+		if startErr := StartDaemon(session); startErr != nil {
+			return nil, fmt.Errorf("failed to restart daemon after stale socket: %w", startErr)
+		}
+		conn, err = net.DialTimeout(network, socketPath, timeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to daemon: %w", err)
+		}
 	}
 	defer conn.Close()
 

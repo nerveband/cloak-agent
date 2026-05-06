@@ -28,7 +28,7 @@ make build
 make install
 ```
 
-Installs to `~/.cloak-agent/` and symlinks to `/usr/local/bin/`. The stealth Chromium binary (~200MB) downloads automatically on first run.
+Installs to `~/.cloak-agent/`, exposes `cloak-agent` through a writable PATH location when possible, and downloads/checks the stealth Chromium binary (~200MB).
 
 ### Prerequisites
 
