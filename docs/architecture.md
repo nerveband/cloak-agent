@@ -49,6 +49,16 @@ The daemon (`daemon/src/daemon.ts`) listens on the Unix socket and manages the b
 
 **Stream server** (`stream-server.ts`) — Optional WebSocket server for live viewport streaming via CDP screencast.
 
+### Runtime dependency baseline
+
+The daemon intentionally keeps browser-facing dependencies explicit in `daemon/package.json`:
+
+- `cloakbrowser` `^0.3.31` supplies the patched Chromium runtime and install CLI.
+- `playwright-core` `^1.57.0` is the automation API used by the daemon.
+- `ws` `^8.21.0` powers the optional local stream server and should stay at or above `8.20.1`.
+
+After dependency refreshes, run `npm audit --json` in `daemon/`, `npm test` in `daemon/`, `go test ./...`, and `make build`.
+
 ### Data flow
 
 ```

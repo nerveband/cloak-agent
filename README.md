@@ -53,6 +53,12 @@ make install
 
 Source installs copy the binary and daemon to `~/.cloak-agent/`, install daemon production dependencies, run `cloakbrowser install`, and expose `cloak-agent` through an existing writable PATH directory when possible. If no writable PATH directory exists, the installer links to `~/.local/bin` and prints the PATH line only when needed. Installed-layout installs run the same daemon/bootstrap steps in place.
 
+Current runtime baseline:
+
+- `cloakbrowser` `^0.3.31` for the patched Chromium runtime.
+- `playwright-core` `^1.57.0` for browser control.
+- `ws` `^8.21.0` for the optional local viewport stream server.
+
 ## Quick start
 
 ```bash
@@ -407,7 +413,7 @@ More detail: [docs/architecture.md](docs/architecture.md)
 make test
 ```
 
-This runs both Go tests (52 tests) and daemon TypeScript tests (69 tests, including integration tests with real browser).
+This runs both Go tests and daemon TypeScript tests, including integration tests with a real CloakBrowser launch.
 
 ## Project structure
 

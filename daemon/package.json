@@ -1,6 +1,6 @@
 {
   "name": "cloak-agent-daemon",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "main": "dist/daemon.js",
@@ -14,9 +14,9 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "cloakbrowser": "^0.3.27",
+    "cloakbrowser": "^0.3.31",
     "playwright-core": "^1.57.0",
-    "ws": "^8.19.0",
+    "ws": "^8.21.0",
     "zod": "^3.22.4"
   },
   "overrides": {
