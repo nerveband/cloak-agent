@@ -56,6 +56,8 @@ cloak-agent stealth status
 4. **Re-snapshot** after navigation or significant DOM changes
 5. **Verify stealth:** `cloak-agent stealth status` after launch
 
+For tricky interactions, follow `docs/interaction-playbook.md`. That playbook credits browser-harness as inspiration for screenshot-first debugging, explicit interaction playbooks, runtime proof in diagnostics, and a narrow raw-CDP fallback.
+
 ## Architecture
 
 Two processes, one job:
@@ -259,6 +261,7 @@ cloak-agent dialog dismiss          # Dismiss dialog
 
 ```bash
 cloak-agent eval "document.title"   # Run JavaScript
+cloak-agent cdp Runtime.evaluate '{"expression":"document.title","returnByValue":true}'
 ```
 
 ### State management

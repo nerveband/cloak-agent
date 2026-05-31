@@ -201,7 +201,10 @@ cloak-agent dialog dismiss             # Dismiss dialog
 
 ```bash
 cloak-agent eval "document.title"      # Run JavaScript, return result
+cloak-agent cdp Runtime.evaluate '{"expression":"document.title","returnByValue":true}'
 ```
+
+`cdp` sends a raw Chrome DevTools Protocol method to the active page session. It is a deliberate escape hatch for cases where ordinary refs, selectors, or JavaScript evaluation are not enough. Prefer built-in commands first, keep CDP payloads narrow, and re-snapshot after CDP-driven changes.
 
 ## State management
 

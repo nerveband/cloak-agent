@@ -399,6 +399,29 @@ func TestParseArgs_EvalUsesExpressionField(t *testing.T) {
 	assertNoKey(t, m, "script")
 }
 
+func TestParseArgs_CDPWithParams(t *testing.T) {
+	m, err := ParseArgs([]string{"cdp", "Runtime.evaluate", `{"expression":"document.title","returnByValue":true}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "cdp")
+	assertEq(t, m, "method", "Runtime.evaluate")
+	params, ok := m["params"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected params map, got %T", m["params"])
+	}
+	if params["expression"] != "document.title" || params["returnByValue"] != true {
+		t.Fatalf("unexpected params: %#v", params)
+	}
+}
+
+func TestParseArgs_CDPRejectsNonObjectParams(t *testing.T) {
+	_, err := ParseArgs([]string{"cdp", "Runtime.evaluate", `"bad"`})
+	if err == nil {
+		t.Fatal("expected error for non-object CDP params")
+	}
+}
+
 func TestParseArgs_SetDeviceUsesNameField(t *testing.T) {
 	m, err := ParseArgs([]string{"set", "device", "iPhone 14"})
 	if err != nil {

@@ -15,7 +15,7 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.1.6"
+var Version = "0.1.7"
 
 func Execute(args []string) error {
 	if len(args) == 0 {
@@ -431,6 +431,7 @@ func handleDoctor(flags GlobalFlags) error {
 	if raw, err := os.ReadFile(GetStreamPortFile(flags.Session)); err == nil {
 		streamPort = strings.TrimSpace(string(raw))
 	}
+	runtimeStatus, runtimeStatusErr := queryRuntimeStatus(flags.Session)
 	data := map[string]interface{}{
 		"version":           Version,
 		"appDir":            GetAppDir(),
@@ -438,6 +439,8 @@ func handleDoctor(flags GlobalFlags) error {
 		"session":           flags.Session,
 		"daemonRunning":     IsDaemonRunning(flags.Session),
 		"streamPort":        streamPort,
+		"runtimeStatus":     runtimeStatus,
+		"runtimeStatusError": "",
 		"installedDaemon":   daemonDir,
 		"daemonJS":          daemonJS,
 		"daemonJSError":     "",
@@ -456,8 +459,37 @@ func handleDoctor(flags GlobalFlags) error {
 	if daemonErr != nil {
 		data["daemonJSError"] = daemonErr.Error()
 	}
+	if runtimeStatusErr != nil {
+		data["runtimeStatusError"] = runtimeStatusErr.Error()
+	}
 	printSpecialResponse(flags, data)
 	return nil
+}
+
+func queryRuntimeStatus(session string) (interface{}, error) {
+	if !IsDaemonRunning(session) {
+		return nil, nil
+	}
+	payload := map[string]interface{}{
+		"id":     generateID(),
+		"action": "runtime_status",
+	}
+	jsonBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	respBytes, err := SendCommand(session, jsonBytes, 2*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	var resp Response
+	if err := json.Unmarshal(respBytes, &resp); err != nil {
+		return nil, err
+	}
+	if !resp.IsSuccess() {
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	return resp.Data, nil
 }
 
 func ioReadAll(f *os.File) ([]byte, error) {

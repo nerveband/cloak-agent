@@ -240,6 +240,38 @@ describe('parseCommand', () => {
     }
   });
 
+  it('parses raw CDP command with object params', () => {
+    const result = parseCommand(
+      JSON.stringify({
+        id: '9b',
+        action: 'cdp',
+        method: 'Runtime.evaluate',
+        params: { expression: 'document.title', returnByValue: true },
+      })
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.action).toBe('cdp');
+      expect((result.command as any).method).toBe('Runtime.evaluate');
+      expect((result.command as any).params.expression).toBe('document.title');
+    }
+  });
+
+  it('rejects malformed CDP method names', () => {
+    const result = parseCommand(
+      JSON.stringify({ id: '9c', action: 'cdp', method: 'Runtime evaluate' })
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('parses runtime_status without launching a browser', () => {
+    const result = parseCommand(JSON.stringify({ id: '9d', action: 'runtime_status' }));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.action).toBe('runtime_status');
+    }
+  });
+
   it('rejects navigate without required url', () => {
     const result = parseCommand(JSON.stringify({ id: '10', action: 'navigate' }));
     expect(result.ok).toBe(false);
@@ -304,6 +336,8 @@ describe('dumpAllSchemas', () => {
     expect(keys).toContain('profile_list');
     expect(keys).toContain('snapshot');
     expect(keys).toContain('schema');
+    expect(keys).toContain('cdp');
+    expect(keys).toContain('runtime_status');
   });
 });
 

@@ -85,6 +85,8 @@ cloak-agent close
 
 Full reference: [docs/commands.md](docs/commands.md)
 
+Interaction patterns: [docs/interaction-playbook.md](docs/interaction-playbook.md). This playbook explicitly credits [browser-harness](https://github.com/browser-use/browser-harness) as inspiration for its screenshot-first, interaction-skills style and raw-CDP fallback mindset.
+
 ### Navigation
 
 ```bash
@@ -222,6 +224,10 @@ cloak-agent wait --load networkidle # Wait for network idle
 cloak-agent state save auth.json    # Save session
 cloak-agent state load auth.json    # Restore session
 
+# JavaScript / CDP
+cloak-agent eval "document.title"
+cloak-agent cdp Runtime.evaluate '{"expression":"document.title","returnByValue":true}'
+
 # Network
 cloak-agent network requests        # View tracked requests
 cloak-agent network route <url> --abort  # Block requests
@@ -326,6 +332,7 @@ JSON errors include `code`, `message`, `hint`, and `retryable`.
 - `node` or `npm` missing: `cloak-agent install` now fails early with a direct prerequisite message instead of a shell stack trace.
 - Daemon startup failure: run `cloak-agent --output json daemon status` and `cloak-agent --output json daemon logs` to inspect the socket path, pid file, and latest log output.
 - Install/runtime mismatch: run `cloak-agent --output json doctor`.
+- Runtime uncertainty: `doctor` includes daemon runtime proof when available, including active page, tabs, and context count.
 - CloakBrowser missing: run `cloak-agent install`; source installs and installed-layout installs both run `npx cloakbrowser install`.
 - Working from a source checkout: the repo-built `./cloak-agent` now resolves `daemon/dist/daemon.js` from the checkout itself, so smoke tests and local development use the current code instead of an older installed daemon copy.
 - Viewport stream clients can read the local WebSocket port from `cloak-agent --output json doctor` (`streamPort`) or `~/.cloak-agent/<session>.stream`.
@@ -405,6 +412,7 @@ More detail: [docs/architecture.md](docs/architecture.md)
 ## Docs
 
 - [Command reference](docs/commands.md) — every command with examples
+- [Interaction playbook](docs/interaction-playbook.md) — practical browser workflows, credited to browser-harness as inspiration
 - [Architecture](docs/architecture.md) — how the CLI and daemon communicate
 - [Stealth guide](docs/stealth.md) — fingerprints, profiles, detection evasion
 

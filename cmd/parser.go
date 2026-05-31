@@ -367,6 +367,24 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		}
 		return map[string]interface{}{"action": "evaluate", "expression": rest[0]}, nil
 
+	case "cdp":
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("cdp requires a CDP method, for example Runtime.evaluate")
+		}
+		m := map[string]interface{}{"action": "cdp", "method": rest[0]}
+		if len(rest) > 1 {
+			var params interface{}
+			if err := json.Unmarshal([]byte(rest[1]), &params); err != nil {
+				return nil, fmt.Errorf("invalid JSON for CDP params: %w", err)
+			}
+			obj, ok := params.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("CDP params must be a JSON object")
+			}
+			m["params"] = obj
+		}
+		return m, nil
+
 	// ── wait ────────────────────────────────────────────────────────────
 	case "wait":
 		if len(rest) < 1 {

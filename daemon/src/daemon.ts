@@ -161,7 +161,7 @@ function looksLikeHTTP(data: Buffer): boolean {
 // Actions that don't require a running browser
 // ---------------------------------------------------------------------------
 
-const NO_BROWSER_ACTIONS = new Set(['launch', 'close', 'schema', 'profile_list']);
+const NO_BROWSER_ACTIONS = new Set(['launch', 'close', 'schema', 'profile_list', 'runtime_status']);
 
 // ---------------------------------------------------------------------------
 // Environment-driven launch options

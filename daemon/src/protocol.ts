@@ -148,6 +148,13 @@ const evaluate = z.object({
   expression: z.string(),
 });
 
+const cdp = z.object({
+  ...base,
+  action: z.literal('cdp'),
+  method: z.string().regex(/^[A-Za-z]+(?:\.[A-Za-z0-9_]+)+$/),
+  params: looseRecord.optional(),
+});
+
 // --- Wait ---
 const wait = z.object({ ...base, action: z.literal('wait'), timeout: z.number().optional(), selector: z.string().optional(), state: z.enum(['attached', 'detached', 'visible', 'hidden']).optional() });
 const waitforurl = z.object({ ...base, action: z.literal('waitforurl'), url: z.string(), timeout: z.number().optional() });
@@ -228,6 +235,7 @@ const wheel = z.object({ ...base, action: z.literal('wheel'), deltaX: z.number()
 
 // --- Schema introspection ---
 const schema = z.object({ ...base, action: z.literal('schema'), command: z.string().optional(), all: z.boolean().optional() });
+const runtime_status = z.object({ ...base, action: z.literal('runtime_status') });
 
 // --- Cloak-Agent exclusive ---
 const stealth_status = z.object({ ...base, action: z.literal('stealth_status') });
@@ -247,8 +255,8 @@ const allSchemas = [
   snapshot,
   // Screenshot / PDF
   screenshot, pdf,
-  // Evaluate
-  evaluate,
+  // Evaluate / CDP
+  evaluate, cdp,
   // Wait
   wait, waitforurl, waitforloadstate, waitforfunction,
   // Scroll
@@ -275,8 +283,8 @@ const allSchemas = [
   getbyrole, getbytext, getbylabel,
   // Mouse
   mousemove, mousedown, mouseup, wheel,
-  // Schema introspection
-  schema,
+  // Schema introspection / runtime diagnostics
+  schema, runtime_status,
   // Cloak-Agent exclusive
   stealth_status, fingerprint_rotate, profile_create, profile_list,
 ] as const;
@@ -447,7 +455,7 @@ function safetyMetadata(action: string): Record<string, boolean | string> {
     'unroute', 'viewport', 'device', 'geolocation', 'headers', 'credentials',
     'offline', 'emulatemedia', 'state_load', 'highlight', 'trace_start',
     'trace_stop', 'recording_start', 'recording_stop', 'fingerprint_rotate',
-    'profile_create',
+    'profile_create', 'cdp',
   ]);
   const destructive = new Set(['close', 'tab_close', 'cookies_clear', 'storage_clear', 'unroute', 'fingerprint_rotate']);
   const idempotent = new Set(['profile_create', 'profile_list', 'schema', 'url', 'title', 'snapshot', 'requests', 'console', 'errors']);

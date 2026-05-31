@@ -47,6 +47,17 @@ export interface StreamTouchInput {
   y: number;
 }
 
+export interface RuntimeStatus {
+  launched: boolean;
+  activePageIndex: number | null;
+  activePage?: {
+    url: string;
+    title: string;
+  };
+  tabs: Array<{ index: number; url: string; title: string }>;
+  contextCount: number;
+}
+
 // ── BrowserManager ──────────────────────────────────────────────────────────
 
 export class BrowserManager {
@@ -175,6 +186,7 @@ export class BrowserManager {
   // ── Active page / frame ─────────────────────────────────────────────────
 
   getPage(): Page {
+    this.pruneClosedPages();
     const page = this.pages[this.activePageIndex];
     if (!page) {
       throw new Error('No browser page available. Call launch() first.');
@@ -251,6 +263,7 @@ export class BrowserManager {
   }
 
   getTabList(): Array<{ index: number; url: string; title: string }> {
+    this.pruneClosedPages();
     return this.pages.map((page, index) => ({
       index,
       url: page.url(),
@@ -259,6 +272,7 @@ export class BrowserManager {
   }
 
   async switchTab(index: number): Promise<void> {
+    this.pruneClosedPages();
     if (index < 0 || index >= this.pages.length) {
       throw new Error(`Tab index ${index} out of range (0-${this.pages.length - 1}).`);
     }
@@ -268,6 +282,7 @@ export class BrowserManager {
   }
 
   async closeTab(index?: number): Promise<void> {
+    this.pruneClosedPages();
     const idx = index ?? this.activePageIndex;
     if (idx < 0 || idx >= this.pages.length) {
       throw new Error(`Tab index ${idx} out of range (0-${this.pages.length - 1}).`);
@@ -284,6 +299,34 @@ export class BrowserManager {
       this.activePageIndex = this.pages.length - 1;
     }
     this.activeFrame = null;
+  }
+
+  async getRuntimeStatus(): Promise<RuntimeStatus> {
+    this.pruneClosedPages();
+    const tabs = await Promise.all(this.pages.map(async (page, index) => ({
+      index,
+      url: page.url(),
+      title: await page.title().catch(() => page.url()),
+    })));
+    const activePage = this.pages[this.activePageIndex];
+
+    return {
+      launched: this.isLaunched(),
+      activePageIndex: activePage ? this.activePageIndex : null,
+      activePage: activePage
+        ? {
+            url: activePage.url(),
+            title: await activePage.title().catch(() => activePage.url()),
+          }
+        : undefined,
+      tabs,
+      contextCount: this.contexts.length,
+    };
+  }
+
+  async sendCDP(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    const session = await this.createInputSession();
+    return session.send(method as any, params as any);
   }
 
   // ── Diagnostics ─────────────────────────────────────────────────────────
@@ -432,6 +475,23 @@ export class BrowserManager {
   private async createInputSession(): Promise<CDPSession> {
     const page = this.getPage();
     return page.context().newCDPSession(page);
+  }
+
+  private pruneClosedPages(): void {
+    const activePage = this.pages[this.activePageIndex];
+    this.pages = this.pages.filter((page) => !page.isClosed());
+    if (activePage && !activePage.isClosed()) {
+      this.activePageIndex = this.pages.indexOf(activePage);
+    }
+    if (this.activePageIndex < 0) {
+      this.activePageIndex = 0;
+    }
+    if (this.activePageIndex >= this.pages.length) {
+      this.activePageIndex = Math.max(0, this.pages.length - 1);
+    }
+    if (this.pages.length === 0) {
+      this.activeFrame = null;
+    }
   }
 
   private encodeModifiers(modifiers: string[] = []): number {

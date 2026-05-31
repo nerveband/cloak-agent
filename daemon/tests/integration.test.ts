@@ -45,4 +45,20 @@ describe('integration: stealth browser', { timeout: 120000 }, () => {
     expect(tabs.length).toBe(1);
     expect(tabs[0].url).toContain('example.com');
   });
+
+  it('reports runtime status with active page proof', async () => {
+    const status = await browser.getRuntimeStatus();
+    expect(status.launched).toBe(true);
+    expect(status.activePageIndex).toBe(0);
+    expect(status.activePage?.title).toContain('Example');
+    expect(status.tabs.length).toBe(1);
+  });
+
+  it('sends raw CDP commands to the active page', async () => {
+    const result = await browser.sendCDP('Runtime.evaluate', {
+      expression: 'document.title',
+      returnByValue: true,
+    }) as any;
+    expect(result.result.value).toContain('Example');
+  });
 });

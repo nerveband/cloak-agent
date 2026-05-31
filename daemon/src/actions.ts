@@ -416,6 +416,12 @@ export async function executeCommand(
         return successResponse(id, { result });
       }
 
+      case 'cdp': {
+        if (command.dryRun) return dryRun(id, `Send CDP method ${command.method}`);
+        const result = await browser.sendCDP(command.method, command.params ?? {});
+        return successResponse(id, { method: command.method, result });
+      }
+
       // =====================================================================
       // Wait
       // =====================================================================
@@ -1167,6 +1173,11 @@ export async function executeCommand(
         // Default: return all schemas
         const schemas = dumpAllSchemas();
         return successResponse(id, { actions: Object.keys(schemas) });
+      }
+
+      case 'runtime_status': {
+        if (command.dryRun) return dryRun(id, 'Inspect daemon browser runtime status');
+        return successResponse(id, await browser.getRuntimeStatus());
       }
 
       // =====================================================================
