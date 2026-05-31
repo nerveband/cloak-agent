@@ -12,6 +12,7 @@ import * as crypto from 'node:crypto';
 import { parseCommand, serializeResponse, errorResponse } from './protocol.js';
 import { executeCommand } from './actions.js';
 import { BrowserManager } from './browser.js';
+import { StreamServer } from './stream-server.js';
 
 // ---------------------------------------------------------------------------
 // Session management
@@ -221,6 +222,9 @@ export async function startDaemon(options?: DaemonOptions): Promise<void> {
 
   // Create browser manager
   const browserManager = new BrowserManager();
+  const streamServer = new StreamServer(browserManager, 0);
+  const streamPort = await streamServer.start();
+  fs.writeFileSync(getStreamPortFile(session), String(streamPort), 'utf-8');
 
   // Create TCP/Unix server
   const server = net.createServer((socket: net.Socket) => {
@@ -287,7 +291,7 @@ export async function startDaemon(options?: DaemonOptions): Promise<void> {
           // For close action: send response, then shut down
           if (command.action === 'close') {
             socket.write(resp + '\n', () => {
-              gracefulShutdown(server, browserManager, session);
+              gracefulShutdown(server, browserManager, streamServer, session);
             });
             continue;
           }
@@ -325,7 +329,7 @@ export async function startDaemon(options?: DaemonOptions): Promise<void> {
 
   // Signal handlers for graceful shutdown
   const onSignal = () => {
-    gracefulShutdown(server, browserManager, session);
+    gracefulShutdown(server, browserManager, streamServer, session);
   };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
@@ -354,12 +358,15 @@ let shutdownInProgress = false;
 async function gracefulShutdown(
   server: net.Server,
   browserManager: BrowserManager,
+  streamServer: StreamServer,
   session: string,
 ): Promise<void> {
   if (shutdownInProgress) return;
   shutdownInProgress = true;
 
   try {
+    streamServer.stop();
+
     // Close browser if running
     if (browserManager.isLaunched()) {
       try {

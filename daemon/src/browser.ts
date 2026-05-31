@@ -1,6 +1,6 @@
 // BrowserManager — lifecycle, snapshots, tabs, and state for CloakBrowser + Playwright.
 
-import type { Browser, BrowserContext, BrowserContextOptions, Page, Frame } from 'playwright-core';
+import type { Browser, BrowserContext, BrowserContextOptions, CDPSession, Page, Frame } from 'playwright-core';
 import { launchContext, launchPersistentContext } from 'cloakbrowser';
 import { buildStealthArgs, ensureProfileDir } from './stealth.js';
 import { getEnhancedSnapshot, type RefData, type SnapshotOptions } from './snapshot.js';
@@ -28,6 +28,25 @@ export interface BrowserLaunchOptions extends StealthOptions {
   contextOptions?: BrowserContextOptions;
 }
 
+export interface StreamMouseInput {
+  action: 'move' | 'down' | 'up' | 'click';
+  x: number;
+  y: number;
+  button?: 'left' | 'right' | 'middle';
+}
+
+export interface StreamKeyboardInput {
+  action: 'keydown' | 'keyup' | 'press';
+  key: string;
+  modifiers?: string[];
+}
+
+export interface StreamTouchInput {
+  action: 'start' | 'move' | 'end' | 'cancel';
+  x: number;
+  y: number;
+}
+
 // ── BrowserManager ──────────────────────────────────────────────────────────
 
 export class BrowserManager {
@@ -45,6 +64,7 @@ export class BrowserManager {
   private isPersistentContext: boolean = false;
   private dialogHandler: ((dialog: any) => void) | null = null;
   private lastLaunchOptions: BrowserLaunchOptions | null = null;
+  private screencastSession: CDPSession | null = null;
 
   // ── Query state ─────────────────────────────────────────────────────────
 
@@ -314,9 +334,121 @@ export class BrowserManager {
     this.routes = new Map();
   }
 
+  // ── CDP streaming / remote input ────────────────────────────────────────
+
+  async startScreencast(onFrame: (data: string) => void): Promise<void> {
+    if (this.screencastSession) {
+      return;
+    }
+
+    const page = this.getPage();
+    const session = await page.context().newCDPSession(page);
+    session.on('Page.screencastFrame', (params: { data: string; sessionId: number }) => {
+      onFrame(params.data);
+      session.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
+    });
+
+    await session.send('Page.startScreencast', {
+      format: 'jpeg',
+      quality: 60,
+      maxWidth: page.viewportSize()?.width ?? 1920,
+      maxHeight: page.viewportSize()?.height ?? 947,
+    });
+    this.screencastSession = session;
+  }
+
+  async stopScreencast(): Promise<void> {
+    const session = this.screencastSession;
+    if (!session) {
+      return;
+    }
+
+    this.screencastSession = null;
+    try {
+      await session.send('Page.stopScreencast');
+    } finally {
+      await session.detach().catch(() => {});
+    }
+  }
+
+  async injectMouseEvent(message: StreamMouseInput): Promise<void> {
+    const session = await this.createInputSession();
+    const button = message.button ?? 'left';
+    const base = { x: message.x, y: message.y, button };
+
+    switch (message.action) {
+      case 'move':
+        await session.send('Input.dispatchMouseEvent', { ...base, type: 'mouseMoved', button: 'none' });
+        return;
+      case 'down':
+        await session.send('Input.dispatchMouseEvent', { ...base, type: 'mousePressed', clickCount: 1 });
+        return;
+      case 'up':
+        await session.send('Input.dispatchMouseEvent', { ...base, type: 'mouseReleased', clickCount: 1 });
+        return;
+      case 'click':
+        await session.send('Input.dispatchMouseEvent', { ...base, type: 'mousePressed', clickCount: 1 });
+        await session.send('Input.dispatchMouseEvent', { ...base, type: 'mouseReleased', clickCount: 1 });
+        return;
+    }
+  }
+
+  async injectKeyboardEvent(message: StreamKeyboardInput): Promise<void> {
+    const session = await this.createInputSession();
+    const payload = { key: message.key, modifiers: this.encodeModifiers(message.modifiers) };
+
+    switch (message.action) {
+      case 'keydown':
+        await session.send('Input.dispatchKeyEvent', { ...payload, type: 'keyDown' });
+        return;
+      case 'keyup':
+        await session.send('Input.dispatchKeyEvent', { ...payload, type: 'keyUp' });
+        return;
+      case 'press':
+        await session.send('Input.dispatchKeyEvent', { ...payload, type: 'keyDown' });
+        await session.send('Input.dispatchKeyEvent', { ...payload, type: 'keyUp' });
+        return;
+    }
+  }
+
+  async injectTouchEvent(message: StreamTouchInput): Promise<void> {
+    const session = await this.createInputSession();
+    const typeByAction = {
+      start: 'touchStart',
+      move: 'touchMove',
+      end: 'touchEnd',
+      cancel: 'touchCancel',
+    } as const;
+    const touchPoints = message.action === 'end' || message.action === 'cancel'
+      ? []
+      : [{ x: message.x, y: message.y }];
+
+    await session.send('Input.dispatchTouchEvent', {
+      type: typeByAction[message.action],
+      touchPoints,
+    });
+  }
+
+  private async createInputSession(): Promise<CDPSession> {
+    const page = this.getPage();
+    return page.context().newCDPSession(page);
+  }
+
+  private encodeModifiers(modifiers: string[] = []): number {
+    const bits: Record<string, number> = {
+      Alt: 1,
+      Control: 2,
+      Meta: 4,
+      Shift: 8,
+    };
+    return modifiers.reduce((mask, modifier) => mask | (bits[modifier] ?? 0), 0);
+  }
+
   // ── Teardown ────────────────────────────────────────────────────────────
 
   async close(options: { preserveLaunchOptions?: boolean } = {}): Promise<void> {
+    await this.stopScreencast();
+
     for (const context of this.contexts) {
       try {
         await context.close();

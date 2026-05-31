@@ -12,6 +12,12 @@ import { BrowserManager } from './browser.js';
 import { toAIFriendlyError, validateFilePath } from './errors.js';
 import { listProfiles, ensureProfileDir } from './stealth.js';
 import { getSnapshotStats, parseRef } from './snapshot.js';
+import { buildLaunchOptions } from './launch-options.js';
+import {
+  executeSemanticLocatorSubaction,
+  semanticActionLabel,
+  semanticSubactionNeedsValue,
+} from './semantic-actions.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,86 +49,14 @@ function dryRun(id: string, description: string): Response {
   return successResponse(id, { dryRun: true, description });
 }
 
-function semanticSubactionNeedsValue(subaction?: string): boolean {
-  return subaction === 'fill' || subaction === 'type' || subaction === 'select';
+function commandSelector(command: Command): string | undefined {
+  return 'selector' in command && typeof command.selector === 'string'
+    ? command.selector
+    : undefined;
 }
 
-function semanticActionLabel(
-  subaction: string,
-  subject: string,
-  value?: string,
-): string {
-  switch (subaction) {
-    case 'click':
-      return `Click ${subject}`;
-    case 'dblclick':
-      return `Double-click ${subject}`;
-    case 'fill':
-      return `Fill ${subject}${value ? ` with "${value}"` : ''}`;
-    case 'type':
-      return `Type into ${subject}${value ? `: "${value}"` : ''}`;
-    case 'hover':
-      return `Hover ${subject}`;
-    case 'focus':
-      return `Focus ${subject}`;
-    case 'check':
-      return `Check ${subject}`;
-    case 'uncheck':
-      return `Uncheck ${subject}`;
-    case 'select':
-      return `Select ${subject}${value ? ` -> "${value}"` : ''}`;
-    case 'count':
-      return `Count matches for ${subject}`;
-    default:
-      return `Inspect ${subject}`;
-  }
-}
-
-async function executeSemanticLocatorSubaction(
-  loc: Locator,
-  subaction: string,
-  value?: string,
-): Promise<Record<string, unknown>> {
-  if (semanticSubactionNeedsValue(subaction) && value === undefined) {
-    throw new Error(`Semantic locator subaction "${subaction}" requires a value.`);
-  }
-
-  switch (subaction) {
-    case 'count': {
-      const count = await loc.count();
-      return { count };
-    }
-    case 'click':
-      await loc.click();
-      return { clicked: true };
-    case 'dblclick':
-      await loc.dblclick();
-      return { dblclicked: true };
-    case 'fill':
-      await loc.fill(value!);
-      return { filled: value };
-    case 'type':
-      await loc.pressSequentially(value!);
-      return { typed: value };
-    case 'hover':
-      await loc.hover();
-      return { hovered: true };
-    case 'focus':
-      await loc.focus();
-      return { focused: true };
-    case 'check':
-      await loc.check();
-      return { checked: true };
-    case 'uncheck':
-      await loc.uncheck();
-      return { unchecked: true };
-    case 'select': {
-      const selected = await loc.selectOption([value!]);
-      return { selected };
-    }
-    default:
-      throw new Error(`Unknown semantic locator subaction "${subaction}".`);
-  }
+function unknownCommandAction(command: never): string {
+  return String((command as { action?: unknown }).action);
 }
 
 // ---------------------------------------------------------------------------
@@ -154,29 +88,7 @@ export async function executeCommand(
             `Launch browser${command.url ? ` and navigate to ${command.url}` : ''} (headless=${command.headless ?? true})`,
           );
         }
-        const launchOpts: Record<string, unknown> = {};
-        if (command.headless !== undefined) launchOpts.headless = command.headless;
-        if (command.url) launchOpts.url = command.url;
-        if (command.geoip !== undefined) launchOpts.geoip = command.geoip;
-        if (command.fingerprintSeed !== undefined) launchOpts.fingerprintSeed = command.fingerprintSeed;
-        if (command.timezone) launchOpts.timezone = command.timezone;
-        if (command.locale) launchOpts.locale = command.locale;
-        if (command.platform) launchOpts.platform = command.platform;
-        if (command.gpuVendor) launchOpts.gpuVendor = command.gpuVendor;
-        if (command.gpuRenderer) launchOpts.gpuRenderer = command.gpuRenderer;
-        if (command.proxy) launchOpts.proxy = command.proxy;
-        if ((command as any).humanize !== undefined) launchOpts.humanize = (command as any).humanize;
-        if ((command as any).humanPreset) launchOpts.humanPreset = (command as any).humanPreset;
-        if ((command as any).humanConfig) launchOpts.humanConfig = (command as any).humanConfig;
-        if ((command as any).contextOptions) launchOpts.contextOptions = (command as any).contextOptions;
-        if ((command as any).args) launchOpts.args = (command as any).args;
-        if ((command as any).userAgent) launchOpts.userAgent = (command as any).userAgent;
-        if ((command as any).viewport) launchOpts.viewport = (command as any).viewport;
-        if ((command as any).executablePath) launchOpts.executablePath = (command as any).executablePath;
-        if ((command as any).storageState) launchOpts.storageState = (command as any).storageState;
-        if ((command as any).ignoreHTTPSErrors !== undefined) launchOpts.ignoreHTTPSErrors = (command as any).ignoreHTTPSErrors;
-        if (command.profile) launchOpts.profile = command.profile;
-        await browser.launch(launchOpts as any);
+        await browser.launch(buildLaunchOptions(command));
 
         // If a URL was provided, navigate to it after launch
         if (command.url) {
@@ -1319,7 +1231,7 @@ export async function executeCommand(
         const previousOptions = browser.getLastLaunchOptions() ?? {};
         // Close current browser instance, preserving the launch options for this relaunch.
         await browser.close({ preserveLaunchOptions: true });
-        await browser.launch({ ...previousOptions, fingerprintSeed: newSeed } as any);
+        await browser.launch({ ...previousOptions, fingerprintSeed: newSeed });
         // Report the new fingerprint info
         return successResponse(id, {
           rotated: true,
@@ -1345,11 +1257,11 @@ export async function executeCommand(
         // this branch is unreachable.  If a new action is added to the
         // Command union but not handled here, the compiler will flag it.
         const _exhaustive: never = command;
-        return errorResponse(id, `Unknown action: ${(command as any).action}`);
+        return errorResponse(id, `Unknown action: ${unknownCommandAction(command)}`);
       }
     }
   } catch (err: unknown) {
-    const friendly = toAIFriendlyError(err, (command as any).selector);
+    const friendly = toAIFriendlyError(err, commandSelector(command));
     return errorResponse(id, friendly.message);
   }
 }

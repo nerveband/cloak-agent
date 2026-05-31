@@ -47,7 +47,8 @@ The daemon (`daemon/src/daemon.ts`) listens on the Unix socket and manages the b
 
 **Error handler** (`errors.ts`) — Translates Playwright errors like "strict mode violation: resolved to 3 elements" into "Selector matched 3 elements. Run 'snapshot' to get updated refs." Also validates file paths and refs to block hallucinated input from agents.
 
-**Stream server** (`stream-server.ts`) — Optional WebSocket server for live viewport streaming via CDP screencast.
+**Stream server** (`stream-server.ts`) — Optional WebSocket server for live viewport streaming and input forwarding. It uses Chromium CDP through `BrowserManager` for screencast frames and mouse, keyboard, and touch injection.
+The daemon starts it on `127.0.0.1` with an OS-assigned port and writes that port to `~/.cloak-agent/<session>.stream`; `doctor` also reports the active `streamPort`.
 
 ### Runtime dependency baseline
 
@@ -55,7 +56,7 @@ The daemon intentionally keeps browser-facing dependencies explicit in `daemon/p
 
 - `cloakbrowser` `^0.3.31` supplies the patched Chromium runtime and install CLI.
 - `playwright-core` `^1.57.0` is the automation API used by the daemon.
-- `ws` `^8.21.0` powers the optional local stream server and should stay at or above `8.20.1`.
+- `ws` `^8.21.0` powers the optional CDP-backed local stream server and should stay at or above `8.20.1`.
 
 After dependency refreshes, run `npm audit --json` in `daemon/`, `npm test` in `daemon/`, `go test ./...`, and `make build`.
 

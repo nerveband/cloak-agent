@@ -57,7 +57,7 @@ Current runtime baseline:
 
 - `cloakbrowser` `^0.3.31` for the patched Chromium runtime.
 - `playwright-core` `^1.57.0` for browser control.
-- `ws` `^8.21.0` for the optional local viewport stream server.
+- `ws` `^8.21.0` for the optional CDP-backed local viewport stream server.
 
 ## Quick start
 
@@ -328,6 +328,7 @@ JSON errors include `code`, `message`, `hint`, and `retryable`.
 - Install/runtime mismatch: run `cloak-agent --output json doctor`.
 - CloakBrowser missing: run `cloak-agent install`; source installs and installed-layout installs both run `npx cloakbrowser install`.
 - Working from a source checkout: the repo-built `./cloak-agent` now resolves `daemon/dist/daemon.js` from the checkout itself, so smoke tests and local development use the current code instead of an older installed daemon copy.
+- Viewport stream clients can read the local WebSocket port from `cloak-agent --output json doctor` (`streamPort`) or `~/.cloak-agent/<session>.stream`.
 
 ## Examples
 

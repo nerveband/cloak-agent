@@ -95,6 +95,11 @@ func GetLogFile(session string) string {
 	return filepath.Join(GetSocketDir(), session+".log")
 }
 
+// GetStreamPortFile returns the path to the daemon stream port file.
+func GetStreamPortFile(session string) string {
+	return filepath.Join(GetSocketDir(), session+".stream")
+}
+
 func fileExists(path string) bool {
 	if path == "" {
 		return false

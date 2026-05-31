@@ -3,6 +3,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { BrowserManager } from './browser.js';
+import type { StreamKeyboardInput, StreamMouseInput, StreamTouchInput } from './browser.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -25,26 +26,16 @@ interface FrameMessage {
   metadata?: { timestamp: number };
 }
 
-interface InputMouseMessage {
+interface InputMouseMessage extends StreamMouseInput {
   type: 'input_mouse';
-  action: 'move' | 'down' | 'up' | 'click';
-  x: number;
-  y: number;
-  button?: 'left' | 'right' | 'middle';
 }
 
-interface InputKeyboardMessage {
+interface InputKeyboardMessage extends StreamKeyboardInput {
   type: 'input_keyboard';
-  action: 'keydown' | 'keyup' | 'press';
-  key: string;
-  modifiers?: string[];
 }
 
-interface InputTouchMessage {
+interface InputTouchMessage extends StreamTouchInput {
   type: 'input_touch';
-  action: 'start' | 'move' | 'end' | 'cancel';
-  x: number;
-  y: number;
 }
 
 type ClientMessage =
@@ -52,6 +43,12 @@ type ClientMessage =
   | InputKeyboardMessage
   | InputTouchMessage
   | { type: 'status' };
+
+function unknownMessageType(message: never): string {
+  return typeof message === 'object' && message !== null && 'type' in message
+    ? String((message as { type: unknown }).type)
+    : 'unknown';
+}
 
 // ── StreamServer ───────────────────────────────────────────────────────────────
 
@@ -69,8 +66,9 @@ export class StreamServer {
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
-  start(): void {
+  async start(): Promise<number> {
     this.wss = new WebSocketServer({
+      host: '127.0.0.1',
       port: this.port,
       verifyClient: (info: { origin: string; secure: boolean; req: IncomingMessage }) => {
         const origin = info.origin;
@@ -85,6 +83,17 @@ export class StreamServer {
     this.wss.on('connection', (ws: WebSocket) => {
       this.handleConnection(ws);
     });
+
+    await new Promise<void>((resolve) => {
+      this.wss?.once('listening', () => resolve());
+    });
+
+    const address = this.wss.address();
+    if (!address || typeof address === 'string') {
+      return this.port;
+    }
+    this.port = address.port;
+    return this.port;
   }
 
   stop(): void {
@@ -163,28 +172,22 @@ export class StreamServer {
         this.sendStatus(ws);
         break;
       default:
-        this.sendError(ws, `Unknown message type: ${(message as any).type}`);
+        this.sendError(ws, `Unknown message type: ${unknownMessageType(message)}`);
     }
   }
 
   // ── Input handlers ─────────────────────────────────────────────────────────
 
   private handleMouseInput(message: InputMouseMessage): void {
-    // TODO: Requires BrowserManager.injectMouseEvent(message) — needs CDP session support
-    // Once BrowserManager has CDP session access, call:
-    // this.browser.injectMouseEvent(message);
+    this.browser.injectMouseEvent(message).catch((err) => this.sendAllErrors(err));
   }
 
   private handleKeyboardInput(message: InputKeyboardMessage): void {
-    // TODO: Requires BrowserManager.injectKeyboardEvent(message) — needs CDP session support
-    // Once BrowserManager has CDP session access, call:
-    // this.browser.injectKeyboardEvent(message);
+    this.browser.injectKeyboardEvent(message).catch((err) => this.sendAllErrors(err));
   }
 
   private handleTouchInput(message: InputTouchMessage): void {
-    // TODO: Requires BrowserManager.injectTouchEvent(message) — needs CDP session support
-    // Once BrowserManager has CDP session access, call:
-    // this.browser.injectTouchEvent(message);
+    this.browser.injectTouchEvent(message).catch((err) => this.sendAllErrors(err));
   }
 
   // ── Screencast ─────────────────────────────────────────────────────────────
@@ -192,28 +195,14 @@ export class StreamServer {
   async startScreencast(): Promise<void> {
     if (this.screencasting) return;
 
-    // TODO: Requires BrowserManager.startScreencast(callback) — needs CDP session support
-    // Once BrowserManager has CDP session access:
-    //   const cdpSession = await this.browser.getPage().context().newCDPSession(this.browser.getPage());
-    //   cdpSession.on('Page.screencastFrame', (params) => {
-    //     this.broadcastFrame(params.data);
-    //     cdpSession.send('Page.screencastFrameAck', { sessionId: params.sessionId });
-    //   });
-    //   await cdpSession.send('Page.startScreencast', {
-    //     format: 'jpeg', quality: 60,
-    //     maxWidth: this.viewportWidth, maxHeight: this.viewportHeight,
-    //   });
-
+    await this.browser.startScreencast((data) => this.broadcastFrame(data));
     this.screencasting = true;
   }
 
   async stopScreencast(): Promise<void> {
     if (!this.screencasting) return;
 
-    // TODO: Requires BrowserManager.stopScreencast() — needs CDP session support
-    // Once BrowserManager has CDP session access:
-    //   await cdpSession.send('Page.stopScreencast');
-
+    await this.browser.stopScreencast();
     this.screencasting = false;
   }
 
@@ -258,6 +247,13 @@ export class StreamServer {
 
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(errorMsg));
+    }
+  }
+
+  private sendAllErrors(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    for (const client of this.clients) {
+      this.sendError(client, message);
     }
   }
 

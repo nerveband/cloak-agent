@@ -15,7 +15,7 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.1.5"
+var Version = "0.1.6"
 
 func Execute(args []string) error {
 	if len(args) == 0 {
@@ -427,12 +427,17 @@ func handleDoctor(flags GlobalFlags) error {
 	npxPath, npxErr := exec.LookPath("npx")
 	daemonDir := findInstalledDaemonDir()
 	daemonJS, daemonErr := findDaemonJS()
+	streamPort := ""
+	if raw, err := os.ReadFile(GetStreamPortFile(flags.Session)); err == nil {
+		streamPort = strings.TrimSpace(string(raw))
+	}
 	data := map[string]interface{}{
 		"version":           Version,
 		"appDir":            GetAppDir(),
 		"socketDir":         GetSocketDir(),
 		"session":           flags.Session,
 		"daemonRunning":     IsDaemonRunning(flags.Session),
+		"streamPort":        streamPort,
 		"installedDaemon":   daemonDir,
 		"daemonJS":          daemonJS,
 		"daemonJSError":     "",
