@@ -171,6 +171,8 @@ cloak-agent storage local clear        # Clear localStorage
 ```bash
 cloak-agent network requests                   # View tracked requests
 cloak-agent network requests --filter api      # Filter by URL pattern
+cloak-agent network requests --type xhr,fetch --method POST --status 2xx
+cloak-agent network request r1                 # Full request/response metadata
 cloak-agent network route <url>                # Intercept and continue matching requests
 cloak-agent network route <url> --abort        # Block requests
 cloak-agent network route <url> --body '{}'    # Mock response
@@ -185,6 +187,9 @@ cloak-agent network unroute <url>              # Remove one route
 cloak-agent tab                        # List tabs
 cloak-agent tab new                    # New empty tab
 cloak-agent tab new https://x.com      # New tab with URL
+cloak-agent tab new --label docs https://docs.example.com
+cloak-agent tab t2                     # Switch by stable tab id
+cloak-agent tab docs                   # Switch by label
 cloak-agent tab 2                      # Switch to tab 2
 cloak-agent tab close                  # Close current tab
 ```
@@ -195,6 +200,7 @@ cloak-agent tab close                  # Close current tab
 cloak-agent dialog accept              # Accept alert/confirm/prompt
 cloak-agent dialog accept "text"       # Accept prompt with text
 cloak-agent dialog dismiss             # Dismiss dialog
+cloak-agent dialog status              # Inspect a pending prompt/confirm
 ```
 
 ## JavaScript

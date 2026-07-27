@@ -55,15 +55,18 @@ Source installs copy the binary and daemon to `~/.cloak-agent/`, install daemon 
 
 Current runtime baseline:
 
-- `cloakbrowser` `^0.3.31` for the patched Chromium runtime.
-- `playwright-core` `^1.57.0` for browser control.
-- `ws` `^8.21.0` for the optional CDP-backed local viewport stream server.
+- `cloakbrowser` `^0.5.2` for the patched Chromium runtime and stable/preview release channels.
+- `playwright-core` `^1.62.0` for browser control.
+- `ws` `^8.21.1` for the optional CDP-backed local viewport stream server.
 
 ## Quick start
 
 ```bash
 # Navigate to a page
 cloak-agent open https://example.com
+cloak-agent open                         # Launch on about:blank
+cloak-agent read                         # Agent-friendly text from the active page
+cloak-agent keyboard type "hello"        # Type into the focused element
 
 # See what's on the page (interactive elements only)
 cloak-agent snapshot -i
@@ -208,7 +211,9 @@ The CLI checks for updates in the background (once every 24 hours) and prints a 
 # Tabs
 cloak-agent tab                     # List tabs
 cloak-agent tab new https://x.com   # New tab
-cloak-agent tab 2                   # Switch to tab
+cloak-agent tab new --label docs https://docs.example.com
+cloak-agent tab t2                  # Switch by stable tab id
+cloak-agent tab docs                # Or switch by label
 
 # Cookies
 cloak-agent cookies                 # Get all
@@ -230,9 +235,20 @@ cloak-agent cdp Runtime.evaluate '{"expression":"document.title","returnByValue"
 
 # Network
 cloak-agent network requests        # View tracked requests
+cloak-agent network requests --type xhr,fetch --status 2xx
+cloak-agent network request r1      # Full request/response metadata
 cloak-agent network route <url> --abort  # Block requests
 cloak-agent network unroute         # Remove all registered routes
 ```
+
+Other synchronized Agent Browser ergonomics include `goto`/`navigate` aliases,
+`keydown`/`keyup`, `keyboard inserttext`, `get styles`, `wait --state`,
+`storage session`, `frame`, `dialog status`, `pushstate`, and
+`profiler start|stop`.
+
+CloakBrowser 0.5 launch controls are available through
+`launch --release-channel stable|preview`, `--browser-version`, and repeatable
+`--extension` flags.
 
 ## For AI agents
 

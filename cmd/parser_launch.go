@@ -36,6 +36,22 @@ func parseLaunchArgs(rest []string) (map[string]interface{}, error) {
 			}
 		case "--geoip":
 			m["geoip"] = true
+		case "--browser-version":
+			if i+1 < len(rest) {
+				m["browserVersion"] = rest[i+1]
+				i++
+			}
+		case "--release-channel":
+			if i+1 < len(rest) {
+				m["releaseChannel"] = rest[i+1]
+				i++
+			}
+		case "--extension":
+			if i+1 < len(rest) {
+				existing, _ := m["extensionPaths"].([]string)
+				m["extensionPaths"] = append(existing, rest[i+1])
+				i++
+			}
 		case "--humanize":
 			m["humanize"] = true
 		case "--human-preset":

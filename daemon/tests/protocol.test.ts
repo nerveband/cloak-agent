@@ -9,6 +9,34 @@ import {
 } from '../src/protocol.js';
 
 describe('parseCommand', () => {
+  it('accepts the post-v0.21 agent-browser parity command surface', () => {
+    const commands = [
+      { id: 'p1', action: 'keyboard_type', text: 'hello' },
+      { id: 'p2', action: 'read' },
+      { id: 'p3', action: 'styles', selector: '@e1' },
+      { id: 'p4', action: 'tab_switch', target: 't2' },
+      { id: 'p5', action: 'frame', selector: 'main' },
+      { id: 'p6', action: 'dialog_status' },
+      { id: 'p7', action: 'request_detail', requestId: 'r1' },
+      { id: 'p8', action: 'profiler_start' },
+      { id: 'p9', action: 'storage_get', type: 'session' },
+      { id: 'p10', action: 'pushstate', url: '/next' },
+    ];
+    for (const command of commands) {
+      expect(parseCommand(JSON.stringify(command)).ok, command.action).toBe(true);
+    }
+  });
+
+  it('accepts CloakBrowser 0.5 release controls', () => {
+    const result = parseCommand(JSON.stringify({
+      id: 'cb',
+      action: 'launch',
+      releaseChannel: 'preview',
+      browserVersion: '150.0.7871.114.4',
+      extensionPaths: ['/tmp/ext'],
+    }));
+    expect(result.ok).toBe(true);
+  });
   it('parses a valid navigate command', () => {
     const result = parseCommand(
       JSON.stringify({ id: '1', action: 'navigate', url: 'https://example.com' })

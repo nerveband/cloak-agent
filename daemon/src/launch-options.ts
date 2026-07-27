@@ -8,6 +8,9 @@ export function buildLaunchOptions(command: LaunchCommand): BrowserLaunchOptions
 
   if (command.headless !== undefined) options.headless = command.headless;
   if (command.geoip !== undefined) options.geoip = command.geoip;
+  if (command.browserVersion) options.browserVersion = command.browserVersion;
+  if (command.releaseChannel) options.releaseChannel = command.releaseChannel;
+  if (command.extensionPaths) options.extensionPaths = command.extensionPaths;
   if (command.fingerprintSeed !== undefined) options.fingerprintSeed = command.fingerprintSeed;
   if (command.timezone) options.timezone = command.timezone;
   if (command.locale) options.locale = command.locale;

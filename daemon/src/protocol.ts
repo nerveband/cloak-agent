@@ -52,6 +52,9 @@ const launch = z.object({
   url: z.string().optional(),
   // CloakBrowser stealth options
   geoip: z.boolean().optional(),
+  browserVersion: z.string().optional(),
+  releaseChannel: z.enum(['stable', 'preview']).optional(),
+  extensionPaths: z.array(z.string()).optional(),
   fingerprintSeed: z.number().optional(),
   timezone: z.string().optional(),
   locale: z.string().optional(),
@@ -82,6 +85,7 @@ const navigate = z.object({
 const back = z.object({ ...base, action: z.literal('back'), waitUntil: waitUntilEnum });
 const forward = z.object({ ...base, action: z.literal('forward'), waitUntil: waitUntilEnum });
 const reload = z.object({ ...base, action: z.literal('reload'), waitUntil: waitUntilEnum });
+const pushstate = z.object({ ...base, action: z.literal('pushstate'), url: z.string() });
 const close = z.object({ ...base, action: z.literal('close') });
 const url = z.object({ ...base, action: z.literal('url') });
 const title = z.object({ ...base, action: z.literal('title') });
@@ -111,6 +115,8 @@ const drag = z.object({ ...base, action: z.literal('drag'), source: z.string(), 
 const press = z.object({ ...base, action: z.literal('press'), key: z.string(), selector: z.string().optional(), delay: z.number().optional() });
 const keydown = z.object({ ...base, action: z.literal('keydown'), key: z.string() });
 const keyup = z.object({ ...base, action: z.literal('keyup'), key: z.string() });
+const keyboard_type = z.object({ ...base, action: z.literal('keyboard_type'), text: z.string() });
+const keyboard_inserttext = z.object({ ...base, action: z.literal('keyboard_inserttext'), text: z.string() });
 
 // --- Snapshot ---
 const snapshot = z.object({
@@ -147,6 +153,7 @@ const evaluate = z.object({
   action: z.literal('evaluate'),
   expression: z.string(),
 });
+const read = z.object({ ...base, action: z.literal('read'), url: z.string().optional() });
 
 const cdp = z.object({
   ...base,
@@ -175,28 +182,33 @@ const isenabled = z.object({ ...base, action: z.literal('isenabled'), selector: 
 const ischecked = z.object({ ...base, action: z.literal('ischecked'), selector: z.string() });
 const count = z.object({ ...base, action: z.literal('count'), selector: z.string() });
 const boundingbox = z.object({ ...base, action: z.literal('boundingbox'), selector: z.string() });
+const styles = z.object({ ...base, action: z.literal('styles'), selector: z.string() });
 
 // --- Tabs ---
-const tab_new = z.object({ ...base, action: z.literal('tab_new'), url: z.string().optional() });
+const tab_new = z.object({ ...base, action: z.literal('tab_new'), url: z.string().optional(), label: z.string().optional() });
 const tab_list = z.object({ ...base, action: z.literal('tab_list') });
-const tab_switch = z.object({ ...base, action: z.literal('tab_switch'), index: z.number() });
-const tab_close = z.object({ ...base, action: z.literal('tab_close'), index: z.number().optional() });
+const tab_switch = z.object({ ...base, action: z.literal('tab_switch'), index: z.number().optional(), target: z.string().optional() });
+const tab_close = z.object({ ...base, action: z.literal('tab_close'), index: z.number().optional(), target: z.string().optional() });
+const frame = z.object({ ...base, action: z.literal('frame'), selector: z.string() });
 
 // --- Cookies / Storage ---
 const cookies_get = z.object({ ...base, action: z.literal('cookies_get'), urls: z.array(z.string()).optional() });
 const cookies_set = z.object({ ...base, action: z.literal('cookies_set'), cookies: z.array(z.object({ name: z.string(), value: z.string(), url: z.string().optional(), domain: z.string().optional(), path: z.string().optional() })) });
 const cookies_clear = z.object({ ...base, action: z.literal('cookies_clear') });
-const storage_get = z.object({ ...base, action: z.literal('storage_get'), key: z.string().optional() });
-const storage_set = z.object({ ...base, action: z.literal('storage_set'), key: z.string(), value: z.string() });
-const storage_clear = z.object({ ...base, action: z.literal('storage_clear') });
+const storageType = z.enum(['local', 'session']).default('local');
+const storage_get = z.object({ ...base, action: z.literal('storage_get'), type: storageType, key: z.string().optional() });
+const storage_set = z.object({ ...base, action: z.literal('storage_set'), type: storageType, key: z.string(), value: z.string() });
+const storage_clear = z.object({ ...base, action: z.literal('storage_clear'), type: storageType });
 
 // --- Dialog ---
 const dialog = z.object({ ...base, action: z.literal('dialog'), accept: z.boolean().optional(), promptText: z.string().optional() });
+const dialog_status = z.object({ ...base, action: z.literal('dialog_status') });
 
 // --- Network ---
 const route = z.object({ ...base, action: z.literal('route'), url: z.string(), handler: z.enum(['abort', 'continue', 'fulfill']).optional(), body: z.string().optional(), status: z.number().optional() });
 const unroute = z.object({ ...base, action: z.literal('unroute'), url: z.string().optional() });
-const requests = z.object({ ...base, action: z.literal('requests'), filter: z.string().optional(), limit: z.number().optional() });
+const requests = z.object({ ...base, action: z.literal('requests'), filter: z.string().optional(), resourceTypes: z.array(z.string()).optional(), method: z.string().optional(), status: z.string().optional(), limit: z.number().optional() });
+const request_detail = z.object({ ...base, action: z.literal('request_detail'), requestId: z.string() });
 
 // --- Settings ---
 const viewport = z.object({ ...base, action: z.literal('viewport'), width: z.number(), height: z.number() });
@@ -221,6 +233,8 @@ const trace_start = z.object({ ...base, action: z.literal('trace_start'), path: 
 const trace_stop = z.object({ ...base, action: z.literal('trace_stop'), path: z.string().optional() });
 const recording_start = z.object({ ...base, action: z.literal('recording_start'), path: z.string().optional() });
 const recording_stop = z.object({ ...base, action: z.literal('recording_stop') });
+const profiler_start = z.object({ ...base, action: z.literal('profiler_start') });
+const profiler_stop = z.object({ ...base, action: z.literal('profiler_stop'), path: z.string().optional() });
 
 // --- Semantic locators ---
 const getbyrole = z.object({ ...base, action: z.literal('getbyrole'), role: z.string(), name: z.string().optional(), exact: z.boolean().optional(), subaction: semanticSubactionEnum, value: z.string().optional() });
@@ -248,29 +262,29 @@ const profile_list = z.object({ ...base, action: z.literal('profile_list') });
 // ---------------------------------------------------------------------------
 const allSchemas = [
   // Core navigation
-  launch, navigate, back, forward, reload, close, url, title,
+  launch, navigate, back, forward, reload, pushstate, close, url, title,
   // Interactions
-  click, fill, type_, check, uncheck, hover, focus, dblclick, select, upload, drag, press, keydown, keyup,
+  click, fill, type_, check, uncheck, hover, focus, dblclick, select, upload, drag, press, keydown, keyup, keyboard_type, keyboard_inserttext,
   // Snapshot
   snapshot,
   // Screenshot / PDF
   screenshot, pdf,
   // Evaluate / CDP
-  evaluate, cdp,
+  evaluate, read, cdp,
   // Wait
   wait, waitforurl, waitforloadstate, waitforfunction,
   // Scroll
   scroll, scrollintoview,
   // Element info
-  gettext, innerhtml, inputvalue, getattribute, isvisible, isenabled, ischecked, count, boundingbox,
+  gettext, innerhtml, inputvalue, getattribute, isvisible, isenabled, ischecked, count, boundingbox, styles,
   // Tabs
-  tab_new, tab_list, tab_switch, tab_close,
+  tab_new, tab_list, tab_switch, tab_close, frame,
   // Cookies / Storage
   cookies_get, cookies_set, cookies_clear, storage_get, storage_set, storage_clear,
   // Dialog
-  dialog,
+  dialog, dialog_status,
   // Network
-  route, unroute, requests,
+  route, unroute, requests, request_detail,
   // Settings
   viewport, device, geolocation, headers, credentials, offline, emulatemedia,
   // State
@@ -278,7 +292,7 @@ const allSchemas = [
   // Debug
   console_, errors, highlight,
   // Trace / Recording
-  trace_start, trace_stop, recording_start, recording_stop,
+  trace_start, trace_stop, recording_start, recording_stop, profiler_start, profiler_stop,
   // Semantic locators
   getbyrole, getbytext, getbylabel,
   // Mouse

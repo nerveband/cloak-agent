@@ -3,7 +3,8 @@
 // calls.  70+ actions with dry-run support and AI-friendly error translation.
 // ---------------------------------------------------------------------------
 
-import type { Page, BrowserContext, Locator } from 'playwright-core';
+import fs from 'node:fs/promises';
+import type { Page, Frame, BrowserContext, Locator } from 'playwright-core';
 import { devices } from 'playwright-core';
 
 import type { Command, Response } from './protocol.js';
@@ -33,13 +34,13 @@ import {
 function resolveLocator(
   selector: string,
   browser: BrowserManager,
-  page: Page,
+  page: Page | Frame,
 ): Locator {
   const ref = parseRef(selector);
   if (ref) {
     return browser.getLocatorForRef(ref);
   }
-  return page.locator(selector);
+  return browser.getFrame().locator(selector);
 }
 
 /**
@@ -147,6 +148,18 @@ export async function executeCommand(
         const opts: Record<string, unknown> = {};
         if (command.waitUntil) opts.waitUntil = command.waitUntil;
         await page.reload(opts);
+        return successResponse(id, { url: page.url() });
+      }
+
+      case 'pushstate': {
+        if (command.dryRun) return dryRun(id, `Navigate SPA state to ${command.url}`);
+        const page = browser.getPage();
+        await page.evaluate((nextUrl) => {
+          const next = (window as any).next?.router;
+          if (next?.push) return next.push(nextUrl);
+          history.pushState({}, '', nextUrl);
+          window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+        }, command.url);
         return successResponse(id, { url: page.url() });
       }
 
@@ -323,6 +336,18 @@ export async function executeCommand(
         return successResponse(id, { keyup: command.key });
       }
 
+      case 'keyboard_type': {
+        if (command.dryRun) return dryRun(id, `Type "${command.text}" with keyboard events`);
+        await browser.getPage().keyboard.type(command.text);
+        return successResponse(id, { typed: command.text });
+      }
+
+      case 'keyboard_inserttext': {
+        if (command.dryRun) return dryRun(id, `Insert text "${command.text}"`);
+        await browser.getPage().keyboard.insertText(command.text);
+        return successResponse(id, { inserted: command.text });
+      }
+
       // =====================================================================
       // Snapshot
       // =====================================================================
@@ -414,6 +439,14 @@ export async function executeCommand(
         const page = browser.getPage();
         const result = await page.evaluate(command.expression);
         return successResponse(id, { result });
+      }
+
+      case 'read': {
+        if (command.dryRun) return dryRun(id, `Read agent-friendly page text${command.url ? ` from ${command.url}` : ''}`);
+        const page = browser.getPage();
+        if (command.url) await page.goto(command.url, { waitUntil: 'domcontentloaded' });
+        const text = await page.locator('body').innerText();
+        return successResponse(id, { url: page.url(), title: await page.title(), text });
       }
 
       case 'cdp': {
@@ -603,14 +636,26 @@ export async function executeCommand(
         return successResponse(id, { boundingBox: box });
       }
 
+      case 'styles': {
+        if (command.dryRun) return dryRun(id, `Get computed styles of "${command.selector}"`);
+        const loc = resolveLocator(command.selector, browser, browser.getFrame());
+        const computed = await loc.evaluate((element) => {
+          const styles = getComputedStyle(element);
+          return Object.fromEntries(Array.from(styles).map((name) => [name, styles.getPropertyValue(name)]));
+        });
+        return successResponse(id, { styles: computed });
+      }
+
       // =====================================================================
       // Tabs
       // =====================================================================
 
       case 'tab_new': {
         if (command.dryRun) return dryRun(id, `Open new tab${command.url ? ` at ${command.url}` : ''}`);
-        const newPage = await browser.newTab(command.url);
-        return successResponse(id, { url: newPage.url() });
+        const newPage = await browser.newTab(command.url, command.label);
+        const tab = browser.getTabList().find((entry) => entry.url === newPage.url() && entry.label === command.label)
+          ?? browser.getTabList().at(-1);
+        return successResponse(id, { ...tab, url: newPage.url() });
       }
 
       case 'tab_list': {
@@ -620,10 +665,12 @@ export async function executeCommand(
       }
 
       case 'tab_switch': {
-        if (command.dryRun) return dryRun(id, `Switch to tab index ${command.index}`);
-        await browser.switchTab(command.index);
+        if (command.dryRun) return dryRun(id, `Switch to tab ${command.target ?? command.index}`);
+        if (command.target) await browser.switchTabTarget(command.target);
+        else if (command.index !== undefined) await browser.switchTab(command.index);
+        else return errorResponse(id, 'tab_switch requires a tab id, label, or index');
         const page = browser.getPage();
-        return successResponse(id, { index: command.index, url: page.url() });
+        return successResponse(id, { target: command.target ?? command.index, url: page.url() });
       }
 
       case 'tab_close': {
@@ -633,8 +680,22 @@ export async function executeCommand(
             `Close tab${command.index !== undefined ? ` at index ${command.index}` : ' (current)'}`,
           );
         }
-        await browser.closeTab(command.index);
+        if (command.target) await browser.closeTabTarget(command.target);
+        else await browser.closeTab(command.index);
         return successResponse(id, { closed: true });
+      }
+
+      case 'frame': {
+        if (command.dryRun) return dryRun(id, `Switch to frame "${command.selector}"`);
+        if (command.selector === 'main') {
+          browser.setActiveFrame(null);
+          return successResponse(id, { frame: 'main' });
+        }
+        const handle = await browser.getPage().locator(command.selector).elementHandle();
+        const frame = await handle?.contentFrame();
+        if (!frame) return errorResponse(id, `Selector "${command.selector}" is not an iframe`);
+        browser.setActiveFrame(frame);
+        return successResponse(id, { frame: command.selector, url: frame.url() });
       }
 
       // =====================================================================
@@ -668,34 +729,36 @@ export async function executeCommand(
         if (command.dryRun) {
           return dryRun(
             id,
-            `Get localStorage${command.key ? ` key "${command.key}"` : ' (all keys)'}`,
+            `Get ${command.type}Storage${command.key ? ` key "${command.key}"` : ' (all keys)'}`,
           );
         }
         const page = browser.getPage();
         if (command.key) {
           const value = await page.evaluate(
-            (k: string) => localStorage.getItem(k),
-            command.key,
+            ({ kind, key }) => (kind === 'local' ? localStorage : sessionStorage).getItem(key),
+            { kind: command.type, key: command.key },
           );
           return successResponse(id, { key: command.key, value });
         }
-        const all = await page.evaluate(() => {
+        const all = await page.evaluate((kind) => {
+          const store = kind === 'local' ? localStorage : sessionStorage;
           const result: Record<string, string> = {};
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k !== null) result[k] = localStorage.getItem(k) ?? '';
+          for (let i = 0; i < store.length; i++) {
+            const k = store.key(i);
+            if (k !== null) result[k] = store.getItem(k) ?? '';
           }
           return result;
-        });
-        return successResponse(id, { storage: all });
+        }, command.type);
+        return successResponse(id, { type: command.type, storage: all });
       }
 
       case 'storage_set': {
         if (command.dryRun) return dryRun(id, `Set localStorage key "${command.key}"`);
         const page = browser.getPage();
         await page.evaluate(
-          (args: { k: string; v: string }) => localStorage.setItem(args.k, args.v),
-          { k: command.key, v: command.value },
+          (args: { kind: 'local' | 'session'; k: string; v: string }) =>
+            (args.kind === 'local' ? localStorage : sessionStorage).setItem(args.k, args.v),
+          { kind: command.type, k: command.key, v: command.value },
         );
         return successResponse(id, { key: command.key, set: true });
       }
@@ -703,8 +766,8 @@ export async function executeCommand(
       case 'storage_clear': {
         if (command.dryRun) return dryRun(id, 'Clear localStorage');
         const page = browser.getPage();
-        await page.evaluate(() => localStorage.clear());
-        return successResponse(id, { cleared: true });
+        await page.evaluate((kind) => (kind === 'local' ? localStorage : sessionStorage).clear(), command.type);
+        return successResponse(id, { type: command.type, cleared: true });
       }
 
       // =====================================================================
@@ -718,25 +781,17 @@ export async function executeCommand(
             `Set dialog handler: ${command.accept === false ? 'dismiss' : 'accept'}`,
           );
         }
-        const page = browser.getPage();
         const accept = command.accept !== false;
-        const promptText = command.promptText;
-        page.once('dialog', async (d) => {
-          try {
-            if (accept) {
-              await d.accept(promptText);
-            } else {
-              await d.dismiss();
-            }
-          } catch {
-            // Dialog may already be dismissed
-          }
-        });
+        await browser.handleDialog(accept, command.promptText);
         return successResponse(id, {
-          handler: accept ? 'accept' : 'dismiss',
-          promptText: promptText ?? null,
+          handled: accept ? 'accept' : 'dismiss',
+          promptText: command.promptText ?? null,
         });
       }
+
+      case 'dialog_status':
+        if (command.dryRun) return dryRun(id, 'Inspect pending dialog');
+        return successResponse(id, browser.getDialogStatus());
 
       // =====================================================================
       // Network
@@ -798,9 +853,27 @@ export async function executeCommand(
 
       case 'requests': {
         if (command.dryRun) return dryRun(id, 'Get tracked network requests');
-        const reqs = browser.getTrackedRequests(command.filter);
+        let reqs = browser.getTrackedRequests(command.filter);
+        if (command.resourceTypes?.length) reqs = reqs.filter((request) => command.resourceTypes!.includes(request.resourceType));
+        if (command.method) reqs = reqs.filter((request) => request.method.toUpperCase() === command.method!.toUpperCase());
+        if (command.status) {
+          const matcher = command.status;
+          reqs = reqs.filter((request) => {
+            if (request.status === undefined) return false;
+            if (/^\dxx$/.test(matcher)) return Math.floor(request.status / 100) === Number(matcher[0]);
+            const range = matcher.match(/^(\d+)-(\d+)$/);
+            return range ? request.status >= Number(range[1]) && request.status <= Number(range[2]) : request.status === Number(matcher);
+          });
+        }
         const limited = command.limit ? reqs.slice(0, command.limit) : reqs;
         return successResponse(id, { requests: limited, count: limited.length });
+      }
+
+      case 'request_detail': {
+        if (command.dryRun) return dryRun(id, `Get network request ${command.requestId}`);
+        const request = browser.getRequest(command.requestId);
+        if (!request) return errorResponse(id, `Unknown request "${command.requestId}"`);
+        return successResponse(id, { request });
       }
 
       // =====================================================================
@@ -1010,6 +1083,23 @@ export async function executeCommand(
       case 'recording_stop': {
         if (command.dryRun) return dryRun(id, 'Stop action recording');
         return successResponse(id, { recording: false });
+      }
+
+      case 'profiler_start': {
+        if (command.dryRun) return dryRun(id, 'Start Chrome CPU profiler');
+        await browser.startProfiler();
+        return successResponse(id, { profiling: true });
+      }
+
+      case 'profiler_stop': {
+        if (command.dryRun) return dryRun(id, `Stop Chrome CPU profiler${command.path ? ` and save to ${command.path}` : ''}`);
+        const profile = await browser.stopProfiler();
+        if (command.path) {
+          const path = validateFilePath(command.path);
+          await fs.writeFile(path, JSON.stringify(profile));
+          return successResponse(id, { profiling: false, path });
+        }
+        return successResponse(id, { profiling: false, profile });
       }
 
       // =====================================================================

@@ -46,6 +46,80 @@ func TestParseArgs_OpenURLWithWait(t *testing.T) {
 	assertEq(t, m, "waitUntil", "networkidle")
 }
 
+func TestParseArgs_OpenWithoutURLLaunchesBlank(t *testing.T) {
+	m, err := ParseArgs([]string{"open"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "launch")
+}
+
+func TestParseArgs_AgentBrowserParityCommands(t *testing.T) {
+	tests := []struct {
+		args   []string
+		action string
+	}{
+		{[]string{"goto", "https://example.com"}, "navigate"},
+		{[]string{"keyboard", "type", "hello"}, "keyboard_type"},
+		{[]string{"keyboard", "inserttext", "hello"}, "keyboard_inserttext"},
+		{[]string{"keydown", "Shift"}, "keydown"},
+		{[]string{"keyup", "Shift"}, "keyup"},
+		{[]string{"read"}, "read"},
+		{[]string{"get", "styles", "@e1"}, "styles"},
+		{[]string{"frame", "main"}, "frame"},
+		{[]string{"dialog", "status"}, "dialog_status"},
+		{[]string{"pushstate", "/dashboard"}, "pushstate"},
+		{[]string{"profiler", "start"}, "profiler_start"},
+	}
+	for _, tt := range tests {
+		m, err := ParseArgs(tt.args)
+		if err != nil {
+			t.Fatalf("%v: %v", tt.args, err)
+		}
+		assertEq(t, m, "action", tt.action)
+	}
+}
+
+func TestParseArgs_WaitState(t *testing.T) {
+	m, err := ParseArgs([]string{"wait", "#spinner", "--state", "hidden"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "selector", "#spinner")
+	assertEq(t, m, "state", "hidden")
+}
+
+func TestParseArgs_TabIDsLabelsAndNetworkFilters(t *testing.T) {
+	tab, err := ParseArgs([]string{"tab", "new", "--label", "docs", "https://example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, tab, "label", "docs")
+	assertEq(t, tab, "url", "https://example.com")
+
+	switchTab, err := ParseArgs([]string{"tab", "t2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, switchTab, "target", "t2")
+
+	requests, err := ParseArgs([]string{"network", "requests", "--type", "xhr,fetch", "--method", "POST", "--status", "2xx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, requests, "method", "POST")
+	assertEq(t, requests, "status", "2xx")
+}
+
+func TestParseArgs_LaunchLatestCloakBrowserOptions(t *testing.T) {
+	m, err := ParseArgs([]string{"launch", "--release-channel", "preview", "--browser-version", "150.0.7871.114.4", "--extension", "/tmp/ext"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "releaseChannel", "preview")
+	assertEq(t, m, "browserVersion", "150.0.7871.114.4")
+}
+
 func TestParseArgs_LaunchWithOptions(t *testing.T) {
 	m, err := ParseArgs([]string{"launch", "https://example.com", "--profile", "shop", "--proxy", "http://proxy:8080", "--timezone", "America/New_York", "--locale", "en-US", "--viewport", "1440x900", "--geoip", "--fingerprint-seed", "42", "--arg", "--disable-gpu"})
 	if err != nil {

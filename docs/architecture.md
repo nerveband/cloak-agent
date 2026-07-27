@@ -54,9 +54,9 @@ The daemon starts it on `127.0.0.1` with an OS-assigned port and writes that por
 
 The daemon intentionally keeps browser-facing dependencies explicit in `daemon/package.json`:
 
-- `cloakbrowser` `^0.3.31` supplies the patched Chromium runtime and install CLI.
-- `playwright-core` `^1.57.0` is the automation API used by the daemon.
-- `ws` `^8.21.0` powers the optional CDP-backed local stream server and should stay at or above `8.20.1`.
+- `cloakbrowser` `^0.5.2` supplies the patched Chromium runtime, install CLI, and stable/preview binary channels.
+- `playwright-core` `^1.62.0` is the automation API used by the daemon.
+- `ws` `^8.21.1` powers the optional CDP-backed local stream server.
 
 After dependency refreshes, run `npm audit --json` in `daemon/`, `npm test` in `daemon/`, `go test ./...`, and `make build`.
 

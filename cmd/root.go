@@ -15,7 +15,7 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.1.7"
+var Version = "0.2.0"
 
 func Execute(args []string) error {
 	if len(args) == 0 {
@@ -427,27 +427,39 @@ func handleDoctor(flags GlobalFlags) error {
 	npxPath, npxErr := exec.LookPath("npx")
 	daemonDir := findInstalledDaemonDir()
 	daemonJS, daemonErr := findDaemonJS()
+	cloakBrowserVersion := ""
+	if daemonDir != "" {
+		if raw, err := os.ReadFile(filepath.Join(daemonDir, "node_modules", "cloakbrowser", "package.json")); err == nil {
+			var pkg struct {
+				Version string `json:"version"`
+			}
+			if json.Unmarshal(raw, &pkg) == nil {
+				cloakBrowserVersion = pkg.Version
+			}
+		}
+	}
 	streamPort := ""
 	if raw, err := os.ReadFile(GetStreamPortFile(flags.Session)); err == nil {
 		streamPort = strings.TrimSpace(string(raw))
 	}
 	runtimeStatus, runtimeStatusErr := queryRuntimeStatus(flags.Session)
 	data := map[string]interface{}{
-		"version":           Version,
-		"appDir":            GetAppDir(),
-		"socketDir":         GetSocketDir(),
-		"session":           flags.Session,
-		"daemonRunning":     IsDaemonRunning(flags.Session),
-		"streamPort":        streamPort,
-		"runtimeStatus":     runtimeStatus,
-		"runtimeStatusError": "",
-		"installedDaemon":   daemonDir,
-		"daemonJS":          daemonJS,
-		"daemonJSError":     "",
-		"node":              nodePath,
-		"npm":               npmPath,
-		"npx":               npxPath,
-		"cloakBrowserCache": filepath.Join(os.Getenv("HOME"), ".cloakbrowser"),
+		"version":             Version,
+		"appDir":              GetAppDir(),
+		"socketDir":           GetSocketDir(),
+		"session":             flags.Session,
+		"daemonRunning":       IsDaemonRunning(flags.Session),
+		"streamPort":          streamPort,
+		"runtimeStatus":       runtimeStatus,
+		"runtimeStatusError":  "",
+		"installedDaemon":     daemonDir,
+		"daemonJS":            daemonJS,
+		"daemonJSError":       "",
+		"node":                nodePath,
+		"npm":                 npmPath,
+		"npx":                 npxPath,
+		"cloakBrowserCache":   filepath.Join(os.Getenv("HOME"), ".cloakbrowser"),
+		"cloakBrowserWrapper": cloakBrowserVersion,
 		"checks": map[string]bool{
 			"node":       nodeErr == nil,
 			"npm":        npmErr == nil,
@@ -515,9 +527,10 @@ Examples:
   cloak-agent --dry-run click @e1
 
 Navigation:
-  open <url>                     Navigate to URL
+  open [url]                     Launch blank or navigate to URL (goto/navigate aliases)
   launch [url] [flags...]        Launch browser/session with CloakBrowser options
   back, forward, reload          History navigation
+  pushstate <url>                SPA navigation without a document reload
   close                          Close browser and daemon
 
 Interaction:
@@ -525,6 +538,8 @@ Interaction:
   fill <ref> <text>              Fill input field
   type <ref> <text>              Type text (keystroke by keystroke)
   press <key>                    Press keyboard key
+  keydown|keyup <key>            Hold or release a keyboard key
+  keyboard type|inserttext <txt> Input text into the focused element
   hover, focus, check, uncheck   Element interactions
   select <ref> <value>           Select dropdown option
   scroll up|down|left|right <n>  Scroll page
@@ -532,7 +547,9 @@ Interaction:
 Inspection:
   snapshot [-i] [-c] [-d N]      Get page structure with @refs
   snapshot --max-depth N         Alias for snapshot -d N
+  read [url]                     Read agent-friendly rendered page text
   get title|url|text|html|value  Get page/element info
+  get styles <ref>               Get computed styles
   screenshot [path] [--full]     Take screenshot
   is visible|enabled|checked     Check element state
 
@@ -584,6 +601,9 @@ Launch flags:
   --locale <tag>                 Locale, e.g. en-US
   --viewport <WxH>               Viewport, e.g. 1440x900
   --geoip                        Align geolocation with proxy/IP
+  --release-channel <name>       CloakBrowser stable or preview channel
+  --browser-version <version>    Pin an exact CloakBrowser binary
+  --extension <path>             Load an extension (repeatable)
   --humanize                     Enable human-like mouse/keyboard/scroll behavior
   --human-preset <name>          Human behavior preset: default or careful
   --human-config <json>          Human behavior config JSON object

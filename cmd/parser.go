@@ -115,9 +115,9 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		return parseLaunchArgs(rest)
 
 	// ── navigation ──────────────────────────────────────────────────────
-	case "open":
-		if len(rest) < 1 {
-			return nil, fmt.Errorf("open requires a URL")
+	case "open", "goto", "navigate":
+		if len(rest) == 0 {
+			return map[string]interface{}{"action": "launch"}, nil
 		}
 		m := map[string]interface{}{"action": "navigate", "url": rest[0]}
 		for i := 1; i < len(rest); i++ {
@@ -134,7 +134,12 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		return map[string]interface{}{"action": "forward"}, nil
 	case "reload":
 		return map[string]interface{}{"action": "reload"}, nil
-	case "close":
+	case "pushstate":
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("pushstate requires a URL")
+		}
+		return map[string]interface{}{"action": "pushstate", "url": rest[0]}, nil
+	case "close", "quit", "exit":
 		return map[string]interface{}{"action": "close"}, nil
 	case "doctor":
 		return map[string]interface{}{"action": "doctor"}, nil
@@ -189,11 +194,28 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		}
 		return map[string]interface{}{"action": "type", "selector": rest[0], "text": rest[1]}, nil
 
-	case "press":
+	case "press", "key":
 		if len(rest) < 1 {
 			return nil, fmt.Errorf("press requires a key")
 		}
 		return map[string]interface{}{"action": "press", "key": rest[0]}, nil
+	case "keydown", "keyup":
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("%s requires a key", cmd)
+		}
+		return map[string]interface{}{"action": cmd, "key": rest[0]}, nil
+	case "keyboard":
+		if len(rest) < 2 {
+			return nil, fmt.Errorf("keyboard requires type|inserttext and text")
+		}
+		switch rest[0] {
+		case "type":
+			return map[string]interface{}{"action": "keyboard_type", "text": rest[1]}, nil
+		case "inserttext":
+			return map[string]interface{}{"action": "keyboard_inserttext", "text": rest[1]}, nil
+		default:
+			return nil, fmt.Errorf("keyboard requires type or inserttext")
+		}
 
 	case "hover":
 		if len(rest) < 1 {
@@ -321,6 +343,11 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 				return nil, fmt.Errorf("get box requires a selector")
 			}
 			return map[string]interface{}{"action": "boundingbox", "selector": rest[1]}, nil
+		case "styles":
+			if len(rest) < 2 {
+				return nil, fmt.Errorf("get styles requires a selector")
+			}
+			return map[string]interface{}{"action": "styles", "selector": rest[1]}, nil
 		default:
 			return nil, fmt.Errorf("unknown get subcommand: %s", rest[0])
 		}
@@ -366,6 +393,13 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			return nil, fmt.Errorf("eval requires a script")
 		}
 		return map[string]interface{}{"action": "evaluate", "expression": rest[0]}, nil
+
+	case "read":
+		m := map[string]interface{}{"action": "read"}
+		if len(rest) > 0 {
+			m["url"] = rest[0]
+		}
+		return m, nil
 
 	case "cdp":
 		if len(rest) < 1 {
@@ -417,7 +451,14 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		if ms, err := strconv.Atoi(rest[0]); err == nil {
 			return map[string]interface{}{"action": "wait", "timeout": ms}, nil
 		}
-		return map[string]interface{}{"action": "wait", "selector": rest[0]}, nil
+		m := map[string]interface{}{"action": "wait", "selector": rest[0]}
+		for i := 1; i < len(rest); i++ {
+			if rest[i] == "--state" && i+1 < len(rest) {
+				m["state"] = rest[i+1]
+				i++
+			}
+		}
+		return m, nil
 
 	// ── tabs ────────────────────────────────────────────────────────────
 	case "tab":
@@ -427,19 +468,33 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		switch rest[0] {
 		case "new":
 			m := map[string]interface{}{"action": "tab_new"}
-			if len(rest) > 1 {
-				m["url"] = rest[1]
+			for i := 1; i < len(rest); i++ {
+				if rest[i] == "--label" && i+1 < len(rest) {
+					m["label"] = rest[i+1]
+					i++
+				} else {
+					m["url"] = rest[i]
+				}
 			}
 			return m, nil
 		case "close":
-			return map[string]interface{}{"action": "tab_close"}, nil
-		default:
-			n, err := strconv.Atoi(rest[0])
-			if err != nil {
-				return nil, fmt.Errorf("tab: expected 'new', 'close', or a numeric index, got %q", rest[0])
+			m := map[string]interface{}{"action": "tab_close"}
+			if len(rest) > 1 {
+				m["target"] = rest[1]
 			}
-			return map[string]interface{}{"action": "tab_switch", "index": n}, nil
+			return m, nil
+		default:
+			if n, err := strconv.Atoi(rest[0]); err == nil {
+				return map[string]interface{}{"action": "tab_switch", "index": n}, nil
+			}
+			return map[string]interface{}{"action": "tab_switch", "target": rest[0]}, nil
 		}
+
+	case "frame":
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("frame requires a selector or main")
+		}
+		return map[string]interface{}{"action": "frame", "selector": rest[0]}, nil
 
 	// ── cookies ─────────────────────────────────────────────────────────
 	case "cookies":
@@ -467,6 +522,9 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			return nil, fmt.Errorf("storage requires a type (local)")
 		}
 		stype := rest[0] // e.g. "local"
+		if stype != "local" && stype != "session" {
+			return nil, fmt.Errorf("storage type must be local or session")
+		}
 		sub := rest[1:]
 		if len(sub) == 0 {
 			return map[string]interface{}{"action": "storage_get", "type": stype}, nil
@@ -624,12 +682,29 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		case "requests":
 			m := map[string]interface{}{"action": "requests"}
 			for i := 1; i < len(rest); i++ {
-				if rest[i] == "--filter" && i+1 < len(rest) {
-					m["filter"] = rest[i+1]
-					i++
+				if i+1 < len(rest) {
+					switch rest[i] {
+					case "--filter":
+						m["filter"] = rest[i+1]
+						i++
+					case "--type":
+						m["resourceTypes"] = strings.Split(rest[i+1], ",")
+						i++
+					case "--method":
+						m["method"] = rest[i+1]
+						i++
+					case "--status":
+						m["status"] = rest[i+1]
+						i++
+					}
 				}
 			}
 			return m, nil
+		case "request":
+			if len(rest) < 2 {
+				return nil, fmt.Errorf("network request requires a request id")
+			}
+			return map[string]interface{}{"action": "request_detail", "requestId": rest[1]}, nil
 		default:
 			return nil, fmt.Errorf("unknown network subcommand: %s", rest[0])
 		}
@@ -648,8 +723,10 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			return m, nil
 		case "dismiss":
 			return map[string]interface{}{"action": "dialog", "accept": false}, nil
+		case "status":
+			return map[string]interface{}{"action": "dialog_status"}, nil
 		default:
-			return nil, fmt.Errorf("dialog requires accept or dismiss")
+			return nil, fmt.Errorf("dialog requires accept, dismiss, or status")
 		}
 
 	// ── trace ───────────────────────────────────────────────────────────
@@ -684,6 +761,23 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			return map[string]interface{}{"action": "recording_stop"}, nil
 		default:
 			return nil, fmt.Errorf("unknown record subcommand: %s", rest[0])
+		}
+
+	case "profiler":
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("profiler requires start or stop")
+		}
+		switch rest[0] {
+		case "start":
+			return map[string]interface{}{"action": "profiler_start"}, nil
+		case "stop":
+			m := map[string]interface{}{"action": "profiler_stop"}
+			if len(rest) > 1 {
+				m["path"] = rest[1]
+			}
+			return m, nil
+		default:
+			return nil, fmt.Errorf("profiler requires start or stop")
 		}
 
 	// ── find ────────────────────────────────────────────────────────────

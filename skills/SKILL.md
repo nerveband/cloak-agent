@@ -235,6 +235,8 @@ cloak-agent storage local clear         # Clear all
 ```bash
 cloak-agent tab                         # List tabs
 cloak-agent tab new [url]               # New tab
+cloak-agent tab new --label docs [url]  # New labelled tab
+cloak-agent tab t2                      # Switch by stable id
 cloak-agent tab 2                       # Switch to tab
 cloak-agent tab close                   # Close tab
 ```
@@ -244,6 +246,8 @@ cloak-agent tab close                   # Close tab
 ```bash
 cloak-agent network requests               # View tracked requests
 cloak-agent network requests --filter api   # Filter requests
+cloak-agent network requests --type xhr,fetch --status 2xx
+cloak-agent network request r1              # Request details
 cloak-agent network route <url>             # Intercept requests
 cloak-agent network route <url> --abort     # Block requests
 cloak-agent network route <url> --body '{}' # Mock response
@@ -255,6 +259,7 @@ cloak-agent network unroute [url]           # Remove routes
 ```bash
 cloak-agent dialog accept [text]    # Accept dialog
 cloak-agent dialog dismiss          # Dismiss dialog
+cloak-agent dialog status           # Inspect pending dialog
 ```
 
 ### JavaScript
