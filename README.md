@@ -53,6 +53,20 @@ make install
 
 Source installs copy the binary and daemon to `~/.cloak-agent/`, install daemon production dependencies, run `cloakbrowser install`, and expose `cloak-agent` through an existing writable PATH directory when possible. If no writable PATH directory exists, the installer links to `~/.local/bin` and prints the PATH line only when needed. Installed-layout installs run the same daemon/bootstrap steps in place.
 
+Release archives bundle the Go CLI with the compiled daemon and its locked npm
+manifests. Keep the executable and `daemon/` directory together, then run
+`./cloak-agent install` on Linux or macOS. On Windows, extract the complete ZIP
+and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+```
+
+This installs the daemon dependencies and CloakBrowser runtime in the extracted
+layout. Windows CI verifies the native Go build and unit-level daemon behavior.
+Browser execution still requires an explicit native Windows runtime test; a Go
+cross-build is not a native test.
+
 Current runtime baseline:
 
 - `cloakbrowser` `^0.5.2` for the patched Chromium runtime and stable/preview release channels.

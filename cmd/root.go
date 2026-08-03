@@ -299,7 +299,7 @@ func handleInstall() error {
 }
 
 func handleSessionList(flags GlobalFlags) error {
-	// List .sock files in socket dir
+	// PID files exist for both Unix-socket and Windows-TCP sessions.
 	dir := GetSocketDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -314,8 +314,8 @@ func handleSessionList(flags GlobalFlags) error {
 	found := false
 	for _, e := range entries {
 		name := e.Name()
-		if len(name) > 5 && name[len(name)-5:] == ".sock" {
-			session := name[:len(name)-5]
+		if strings.HasSuffix(name, ".pid") {
+			session := strings.TrimSuffix(name, ".pid")
 			running := IsDaemonRunning(session)
 			status := "stopped"
 			if running {

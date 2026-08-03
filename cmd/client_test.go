@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -15,7 +16,15 @@ func TestGetAppDir(t *testing.T) {
 }
 
 func TestGetSocketPath(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "")
 	path := GetSocketPath("default")
+	if runtime.GOOS == "windows" {
+		expected := "127.0.0.1:63400"
+		if path != expected {
+			t.Fatalf("expected %s, got %s", expected, path)
+		}
+		return
+	}
 	if !strings.HasSuffix(path, "default.sock") {
 		t.Errorf("expected default.sock suffix, got %s", path)
 	}
@@ -25,7 +34,15 @@ func TestGetSocketPath(t *testing.T) {
 }
 
 func TestGetSocketPathCustomSession(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "")
 	path := GetSocketPath("test-session")
+	if runtime.GOOS == "windows" {
+		expected := "127.0.0.1:51523"
+		if path != expected {
+			t.Fatalf("expected %s, got %s", expected, path)
+		}
+		return
+	}
 	if !strings.HasSuffix(path, "test-session.sock") {
 		t.Errorf("expected test-session.sock suffix, got %s", path)
 	}
@@ -61,7 +78,36 @@ func TestGetSocketDirCustom(t *testing.T) {
 	}
 }
 
+func TestGetSocketDirUsesXDGRuntimeDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("XDG runtime directories are a Unix convention")
+	}
+	t.Setenv("CLOAK_AGENT_SOCKET_DIR", "")
+	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1234")
+	expected := filepath.Join("/run/user/1234", "cloak-agent")
+	if got := GetSocketDir(); got != expected {
+		t.Fatalf("expected %s, got %s", expected, got)
+	}
+}
+
+func TestGetPortForSessionSharedVectors(t *testing.T) {
+	vectors := map[string]int{
+		"default":      63400,
+		"test-session": 51523,
+		"alpha":        52947,
+		"":             58288,
+	}
+	for session, expected := range vectors {
+		if got := GetPortForSession(session); got != expected {
+			t.Errorf("GetPortForSession(%q) = %d, want %d", session, got, expected)
+		}
+	}
+}
+
 func TestGetSocketPathIncludesDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows uses TCP instead of filesystem sockets")
+	}
 	tmp := t.TempDir()
 	t.Setenv("CLOAK_AGENT_SOCKET_DIR", tmp)
 	path := GetSocketPath("mysession")
@@ -94,8 +140,8 @@ func TestIsDaemonRunningWithBadPid(t *testing.T) {
 
 func TestFindInstalledDaemonDirFromAppDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
 	daemonDir := filepath.Join(home, ".cloak-agent", "daemon")
+	t.Setenv("CLOAK_AGENT_INSTALL_DIR", filepath.Join(home, ".cloak-agent"))
 	if err := os.MkdirAll(daemonDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -38,7 +38,7 @@ export function getSession(): string {
  * then to os.tmpdir()/cloak-agent.
  */
 export function getAppDir(): string {
-  if (process.env.XDG_RUNTIME_DIR) {
+  if (process.platform !== 'win32' && process.env.XDG_RUNTIME_DIR) {
     return path.join(process.env.XDG_RUNTIME_DIR, 'cloak-agent');
   }
   const home = os.homedir();

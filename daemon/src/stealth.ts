@@ -59,11 +59,14 @@ export function getDefaultStealthConfig(): StealthConfig {
 export function buildStealthArgs(options: StealthOptions): string[] {
   const args: string[] = [];
 
+  const platform = options.platform ?? getDefaultFingerprintPlatform();
+  const hasRawPlatform = options.args?.some((arg) => argKey(arg) === '--fingerprint-platform') ?? false;
+
   if (options.fingerprintSeed !== undefined) {
     args.push(`--fingerprint=${options.fingerprintSeed}`);
   }
-  if (options.platform) {
-    args.push(`--fingerprint-platform=${options.platform}`);
+  if (options.platform || !hasRawPlatform) {
+    args.push(`--fingerprint-platform=${platform}`);
   }
   if (options.gpuVendor) {
     args.push(`--fingerprint-gpu-vendor=${options.gpuVendor}`);

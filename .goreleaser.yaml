@@ -5,6 +5,8 @@ project_name: cloak-agent
 before:
   hooks:
     - go mod tidy
+    - npm --prefix daemon ci
+    - npm --prefix daemon run build
 
 builds:
   - id: cloak-agent
@@ -32,6 +34,14 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    files:
+      - README.md
+      - src: daemon/dist/*
+        dst: daemon/dist
+        strip_parent: true
+      - daemon/package.json
+      - daemon/package-lock.json
+      - scripts/install.ps1
 
 checksum:
   name_template: "checksums.txt"

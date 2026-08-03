@@ -9,7 +9,7 @@ The current daemon baseline is `cloakbrowser` `^0.5.2`. It supports explicit sta
 CloakBrowser modifies Chromium source code to randomize:
 
 - **navigator.webdriver** — removed (normally `true` in automated browsers)
-- **GPU renderer/vendor** — configurable (Apple on macOS, NVIDIA on Windows by default)
+- **GPU renderer/vendor** — configurable through explicit launch options
 - **Screen dimensions** — derived from fingerprint seed
 - **Hardware concurrency** — randomized
 - **Device memory** — randomized
@@ -79,15 +79,10 @@ GeoIP detection is enabled at launch. The browser's timezone and locale will mat
 
 ## Default fingerprint settings
 
-On macOS (Apple Silicon):
-- Platform: macOS
-- GPU vendor: Google Inc. (Apple)
-- GPU renderer: ANGLE (Apple, ANGLE Metal Renderer: Apple M3)
-
-On Linux/Windows:
-- Platform: Windows
-- GPU vendor: NVIDIA Corporation
-- GPU renderer: NVIDIA GeForce RTX 3070
+By default, cloak-agent passes the native host family to CloakBrowser: `macos`
+on Darwin, `linux` on Linux, and `windows` on Windows. GPU vendor and renderer
+defaults remain owned by CloakBrowser. Set them explicitly when a workflow needs
+a particular fingerprint.
 
 You can override any of these at launch via environment variables or the raw JSON launch command:
 

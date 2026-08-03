@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -55,6 +57,9 @@ func (r Response) IsSuccess() bool {
 
 // GetAppDir returns the path to ~/.cloak-agent.
 func GetAppDir() string {
+	if dir := os.Getenv("CLOAK_AGENT_INSTALL_DIR"); dir != "" {
+		return dir
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = "."
@@ -68,19 +73,27 @@ func GetSocketDir() string {
 	if dir := os.Getenv("CLOAK_AGENT_SOCKET_DIR"); dir != "" {
 		return dir
 	}
+	if runtime.GOOS != "windows" {
+		if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+			return filepath.Join(dir, appName)
+		}
+	}
 	return GetAppDir()
+}
+
+// GetPortForSession hashes a session into the IANA dynamic port range.
+// Keep this algorithm and its test vectors in sync with daemon/src/daemon.ts.
+func GetPortForSession(session string) int {
+	hash := sha256.Sum256([]byte(session))
+	value := binary.BigEndian.Uint16(hash[:2])
+	return 49152 + (int(value) % 16384)
 }
 
 // GetSocketPath returns the path to the Unix socket for the given session.
 // On Windows it returns a TCP address instead.
 func GetSocketPath(session string) string {
 	if runtime.GOOS == "windows" {
-		// Use a deterministic TCP port derived from session name
-		port := 9500
-		for _, c := range session {
-			port += int(c)
-		}
-		return fmt.Sprintf("127.0.0.1:%d", port)
+		return fmt.Sprintf("127.0.0.1:%d", GetPortForSession(session))
 	}
 	return filepath.Join(GetSocketDir(), session+".sock")
 }
@@ -173,7 +186,10 @@ func findSourceProjectDir() string {
 func findInstalledDaemonDir() string {
 	candidates := []string{}
 	if exeDir := executableDir(); exeDir != "" {
-		candidates = append(candidates, filepath.Join(exeDir, "..", "daemon"))
+		candidates = append(candidates,
+			filepath.Join(exeDir, "daemon"),
+			filepath.Join(exeDir, "..", "daemon"),
+		)
 	}
 	candidates = append(candidates, filepath.Join(GetAppDir(), "daemon"))
 
@@ -272,6 +288,7 @@ func StartDaemon(session string) error {
 	cmd.Env = append(os.Environ(),
 		"CLOAK_AGENT_DAEMON=1",
 		"CLOAK_AGENT_SESSION="+session,
+		"CLOAK_AGENT_SOCKET_DIR="+socketDir,
 	)
 	// Detach the child process so it outlives the CLI.
 	setDetachAttrs(cmd)
@@ -291,17 +308,30 @@ func StartDaemon(session string) error {
 	// Detach — we don't wait for the process.
 	go cmd.Wait() //nolint:errcheck
 
-	// Poll for the socket to appear.
+	// Poll for the Unix socket or Windows TCP listener.
 	socketPath := GetSocketPath(session)
 	deadline := time.Now().Add(10 * time.Second)
+	if err := waitForEndpoint(socketPath, deadline); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("timed out waiting for daemon socket at %s (log: %s)", socketPath, GetLogFile(session))
+}
+
+func waitForEndpoint(endpoint string, deadline time.Time) error {
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(socketPath); err == nil {
+		if runtime.GOOS == "windows" {
+			conn, err := net.DialTimeout("tcp", endpoint, 100*time.Millisecond)
+			if err == nil {
+				_ = conn.Close()
+				return nil
+			}
+		} else if _, err := os.Stat(endpoint); err == nil {
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-
-	return fmt.Errorf("timed out waiting for daemon socket at %s (log: %s)", socketPath, GetLogFile(session))
+	return fmt.Errorf("endpoint did not become ready: %s", endpoint)
 }
 
 // StopDaemon terminates the daemon for the given session.

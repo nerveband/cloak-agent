@@ -8,9 +8,9 @@ import {
 } from '../src/stealth.js';
 
 describe('buildStealthArgs', () => {
-  it('does not duplicate CloakBrowser default stealth args', () => {
+  it('adds the native platform without duplicating other CloakBrowser defaults', () => {
     const args = buildStealthArgs({});
-    expect(args).toEqual([]);
+    expect(args).toEqual([`--fingerprint-platform=${getDefaultFingerprintPlatform()}`]);
   });
 
   it('uses provided fingerprint seed', () => {
@@ -26,6 +26,11 @@ describe('buildStealthArgs', () => {
   it('sets windows platform only when explicitly requested', () => {
     const args = buildStealthArgs({ platform: 'windows' });
     expect(args).toContain('--fingerprint-platform=windows');
+  });
+
+  it('preserves a raw platform override when the structured option is absent', () => {
+    const args = buildStealthArgs({ args: ['--fingerprint-platform=windows'] });
+    expect(args).toEqual(['--fingerprint-platform=windows']);
   });
 
   it('allows custom GPU', () => {

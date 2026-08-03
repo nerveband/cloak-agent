@@ -122,8 +122,7 @@ export class BrowserManager {
       await this.close({ preserveLaunchOptions: true });
     }
 
-    const explicitStealthArgs = buildStealthArgs(options);
-    const args = [...explicitStealthArgs, ...(options.args ?? [])];
+    const args = buildStealthArgs(options);
     const viewport = options.viewport ?? { width: 1920, height: 947 };
     const contextOptions: BrowserContextOptions = {
       ...(options.contextOptions ?? {}),
