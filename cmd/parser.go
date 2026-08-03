@@ -9,20 +9,22 @@ import (
 
 // GlobalFlags holds CLI-wide flags extracted before the subcommand.
 type GlobalFlags struct {
-	Session     string // --session <name>, default "default"
-	JSONOutput  bool   // --json / --output json
-	HumanOutput bool   // --output human
-	Quiet       bool   // --quiet / -q
-	InputMode   string // --input json
-	InputFile   string // --input-file <path>
-	Timeout     int    // --timeout <ms>
-	Headed      bool   // --headed
-	DryRun      bool   // --dry-run
-	Fields      string // --fields <comma-separated list>
-	Limit       int    // --limit <n>
-	IDOnly      bool   // --id-only
-	CountOnly   bool   // --count
-	Yes         bool   // --yes / -y
+	Session       string // --session <name>, default "default"
+	JSONOutput    bool   // --json / --output json
+	HumanOutput   bool   // --output human
+	Quiet         bool   // --quiet / -q
+	InputMode     string // --input json
+	InputFile     string // --input-file <path>
+	Timeout       int    // --timeout <ms>
+	Headed        bool   // --headed
+	DryRun        bool   // --dry-run
+	Fields        string // --fields <comma-separated list>
+	Limit         int    // --limit <n>
+	IDOnly        bool   // --id-only
+	CountOnly     bool   // --count
+	Yes           bool   // --yes / -y
+	Tailgate      bool   // --tailgate
+	TailgateRoute string // --tailgate-route <name>
 }
 
 // ParseGlobalFlags extracts global flags from args and returns the remaining
@@ -75,6 +77,14 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string) {
 			gf.DryRun = true
 		case "--yes", "-y", "--force":
 			gf.Yes = true
+		case "--tailgate":
+			gf.Tailgate = true
+		case "--tailgate-route":
+			if i+1 < len(args) {
+				gf.Tailgate = true
+				gf.TailgateRoute = args[i+1]
+				i++
+			}
 		case "--fields":
 			if i+1 < len(args) {
 				gf.Fields = args[i+1]
@@ -935,6 +945,20 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			return nil, fmt.Errorf("unknown profile subcommand: %s", rest[0])
 		}
 
+	case "tailgate":
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("tailgate requires status, stop, or doctor")
+		}
+		switch rest[0] {
+		case "status", "stop", "doctor":
+			m := map[string]interface{}{"action": "tailgate_" + rest[0]}
+			if len(rest) > 1 {
+				m["route"] = rest[1]
+			}
+			return m, nil
+		default:
+			return nil, fmt.Errorf("unknown tailgate subcommand: %s", rest[0])
+		}
 	case "session":
 		if len(rest) < 1 {
 			return nil, fmt.Errorf("session requires a subcommand")

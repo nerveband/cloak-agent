@@ -181,6 +181,18 @@ cloak-agent profile create shopping      # Persistent browser profile
 cloak-agent profile list                 # List profiles
 ```
 
+### Per-browser tailgate
+
+Tailgate can route one named browser session through a loopback-only SSH SOCKS tunnel without changing the host route table:
+
+```bash
+cloak-agent --session routed --tailgate launch --profile account https://example.com
+cloak-agent --session routed tailgate status
+cloak-agent --session routed tailgate stop
+```
+
+Configuration, key-only SSH requirements, profile isolation, and diagnostics are documented in [docs/tailgate.md](docs/tailgate.md).
+
 ### Launch / daemon lifecycle
 
 Use `launch` when an agent wants to establish a session with explicit CloakBrowser options instead of generating ad-hoc Node scripts.
@@ -445,6 +457,7 @@ More detail: [docs/architecture.md](docs/architecture.md)
 - [Interaction playbook](docs/interaction-playbook.md) — practical browser workflows, credited to browser-harness as inspiration
 - [Architecture](docs/architecture.md) — how the CLI and daemon communicate
 - [Stealth guide](docs/stealth.md) — fingerprints, profiles, detection evasion
+- [Tailgate routing](docs/tailgate.md) — per-session SSH SOCKS routing
 
 ## Running tests
 

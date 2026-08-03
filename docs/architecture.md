@@ -45,6 +45,8 @@ The daemon (`daemon/src/daemon.ts`) listens on the Unix socket and manages the b
 
 **Stealth module** (`stealth.ts`) — Builds the `--fingerprint-*` CLI args for CloakBrowser's patched Chromium. Manages persistent profiles under `~/.cloak-agent/profiles/`.
 
+**Tailgate integration** (`cmd/tailgate.go`) — Owns optional per-session OpenSSH dynamic SOCKS tunnels. It validates a private JSON config, binds local endpoints, injects a normal CloakBrowser proxy at launch, namespaces routed profiles, and exposes redacted status/doctor output. It never changes system routes.
+
 **Error handler** (`errors.ts`) — Translates Playwright errors like "strict mode violation: resolved to 3 elements" into "Selector matched 3 elements. Run 'snapshot' to get updated refs." Also validates file paths and refs to block hallucinated input from agents.
 
 **Stream server** (`stream-server.ts`) — Optional WebSocket server for live viewport streaming and input forwarding. It uses Chromium CDP through `BrowserManager` for screencast frames and mouse, keyboard, and touch injection.

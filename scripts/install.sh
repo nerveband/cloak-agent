@@ -32,7 +32,8 @@ cp "$PROJECT_DIR/cloak-agent" "$BIN_PATH"
 mkdir -p "$INSTALL_DIR/daemon"
 cp -r "$PROJECT_DIR/daemon/dist" "$INSTALL_DIR/daemon/"
 cp "$PROJECT_DIR/daemon/package.json" "$INSTALL_DIR/daemon/"
-cd "$INSTALL_DIR/daemon" && npm install --omit=dev --quiet
+cp "$PROJECT_DIR/daemon/package-lock.json" "$INSTALL_DIR/daemon/"
+cd "$INSTALL_DIR/daemon" && npm ci --omit=dev --quiet
 cd "$INSTALL_DIR/daemon" && npx cloakbrowser install
 
 path_contains() {

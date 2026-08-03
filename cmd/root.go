@@ -118,6 +118,9 @@ func Execute(args []string) error {
 
 	ensureCommandID(command)
 	applyGlobalCommandFlags(command, flags)
+	if err := prepareTailgate(command, flags); err != nil {
+		return err
+	}
 
 	var restoreHeadedEnv func()
 	if action, ok := command["action"].(string); ok && flags.Headed && action != "launch" {
@@ -190,6 +193,8 @@ func executeSpecialCommand(command map[string]interface{}, flags GlobalFlags) (b
 		return true, handleDaemonLogs(flags)
 	case "doctor":
 		return true, handleDoctor(flags)
+	case "tailgate_status", "tailgate_stop", "tailgate_doctor":
+		return true, handleTailgateCommand(action, command, flags)
 	default:
 		return false, nil
 	}
@@ -467,6 +472,7 @@ func handleDoctor(flags GlobalFlags) error {
 			"daemonDir":  daemonDir != "",
 			"daemonFile": daemonErr == nil,
 		},
+		"tailgate": tailgateDoctorData(flags.Session, ""),
 	}
 	if daemonErr != nil {
 		data["daemonJSError"] = daemonErr.Error()
@@ -559,6 +565,11 @@ Daemon / sessions:
   session list                   List known sessions
   doctor                         Check install, daemon, Node, and browser runtime
 
+Tailgate routing:
+  tailgate status [route]        Inspect the session's local SOCKS tunnel
+  tailgate stop [route]          Stop the session's local SOCKS tunnel
+  tailgate doctor [route]        Validate SSH/config prerequisites
+
 Stealth (cloak-agent exclusive):
   stealth status                 Run bot detection tests
   fingerprint rotate [--seed N]  New browser fingerprint
@@ -586,6 +597,8 @@ Global Flags:
   --headed                       Show browser window
   --dry-run                      Validate without executing
   --yes, -y, --force             Non-interactive confirmation flag
+  --tailgate                     Route this browser through the default tailgate
+  --tailgate-route <name>        Route through a named configured tailgate
   --fields <list>                Limit response fields (human mode)
   --limit <n>                    Limit collection output
   --id-only                      Return only identifiers where possible

@@ -356,6 +356,19 @@ cloak-agent --json '{"action":"navigate","url":"https://example.com","waitUntil"
 | `CLOAK_AGENT_STATE` | Path to storage state JSON |
 | `CLOAK_AGENT_IGNORE_HTTPS_ERRORS` | Ignore HTTPS errors |
 | `CLOAK_AGENT_EXECUTABLE_PATH` | Custom Chromium binary |
+| `CLOAK_AGENT_TAILGATE` | `1` for the default tailgate route or a configured route name |
+| `CLOAK_AGENT_TAILGATE_CONFIG` | Private tailgate JSON config path |
+
+### Per-browser tailgate
+
+```bash
+cloak-agent --session routed --tailgate launch --profile account https://example.com
+cloak-agent --session routed tailgate doctor
+cloak-agent --session routed tailgate status
+cloak-agent --session routed tailgate stop
+```
+
+Use a dedicated session for routed browsing. Tailgate uses a loopback SSH SOCKS tunnel and a route-namespaced persistent profile; it does not change host routes. See `docs/tailgate.md` in the repository for the private config format.
 
 ## Example: Form submission
 

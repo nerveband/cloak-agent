@@ -24,6 +24,8 @@ cloak-agent close                         # Close browser and stop daemon
 
 Launch accepts agent-friendly runtime flags like `--profile`, `--proxy`, `--timezone`, `--locale`, `--viewport`, `--geoip`, `--humanize`, `--human-preset`, `--human-config`, `--fingerprint-seed`, `--platform`, `--gpu-vendor`, `--gpu-renderer`, `--user-agent`, `--executable-path`, `--storage-state`, `--ignore-https-errors`, `--context-options`, and repeatable `--arg`.
 
+Global `--tailgate` selects the private `default` SSH route. `--tailgate-route <name>` selects a named route. Use `tailgate status`, `tailgate doctor`, and `tailgate stop` with the same `--session`. See [tailgate.md](tailgate.md).
+
 ## Snapshots
 
 The core tool for agents. Returns the page's accessibility tree with element refs.
