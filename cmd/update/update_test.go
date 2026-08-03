@@ -133,6 +133,10 @@ func TestCheckWritePermissionReadOnlyDir(t *testing.T) {
 }
 
 func TestCacheFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows file permissions are controlled by ACLs, not Unix mode bits")
+	}
+
 	// Save a cache and check that the file is 0600
 	cache := Cache{
 		LastCheck:      time.Now(),
