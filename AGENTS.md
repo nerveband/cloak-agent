@@ -51,3 +51,13 @@ Exit codes:
 - Forgetting `--output json` in scripts when stdout is not piped.
 - Using `type` for inputs that should be replaced with `fill`.
 - Ignoring daemon state instead of running `cloak-agent doctor`.
+
+## DevBox Linux builds and cleanup
+
+- On `devbox.wavedepth.com`, verify `pwd`, `hostname`, and `id -un` before building or moving artifacts. The repository path is `/home/nerveband/src/tools/cloak-agent` and the account is `nerveband`.
+- Treat `./cloak-agent`, `./dist/`, `./daemon/dist/`, and `./daemon/node_modules/` as generated and recoverable. `make clean` removes the local binary and compiled daemon output. Remove `daemon/node_modules/` only when reinstalling it immediately with `cd daemon && npm ci`.
+- Dependency directories copied from macOS are not valid Linux installs. Native modules under `daemon/node_modules/` must match the current host. Use `file` on native `.node` bindings when diagnosing a copied install.
+- Build and test Linux from a clean dependency install with `cd daemon && npm ci`, then run `make build` and `make test`. Confirm the resulting `./cloak-agent` with `file ./cloak-agent` and run `./cloak-agent version`.
+- Cross-platform Go release artifacts use `.goreleaser.yaml`. Run `goreleaser release --snapshot --clean` for local verification; it builds Darwin, Linux, and Windows archives without publishing. Validate archive checksums and inspect extracted binaries with `file`. A successful cross-build does not prove execution on macOS or Windows.
+- Publishing is tag-driven through the established GoReleaser configuration. Do not create or push a release tag, run a non-snapshot release, or claim deployment without explicit release authorization and direct GitHub evidence.
+- Preserve untracked files until their ownership and purpose are clear. In particular, root-level package manifests and media files are not part of the daemon build merely because similarly named tracked files exist under `daemon/`.

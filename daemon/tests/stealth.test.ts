@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildStealthArgs, getProfileDir, listProfiles, getDefaultStealthConfig } from '../src/stealth.js';
+import {
+  buildStealthArgs,
+  getDefaultFingerprintPlatform,
+  getProfileDir,
+  listProfiles,
+  getDefaultStealthConfig,
+} from '../src/stealth.js';
 
 describe('buildStealthArgs', () => {
   it('does not duplicate CloakBrowser default stealth args', () => {
@@ -46,6 +52,12 @@ describe('getDefaultStealthConfig', () => {
     expect(config.viewport.width).toBe(1920);
     expect(config.viewport.height).toBe(947);
     expect(config).toHaveProperty('platform');
+  });
+
+  it('maps native host platforms to fingerprint platforms', () => {
+    expect(getDefaultFingerprintPlatform('darwin')).toBe('macos');
+    expect(getDefaultFingerprintPlatform('linux')).toBe('linux');
+    expect(getDefaultFingerprintPlatform('win32')).toBe('windows');
   });
 });
 

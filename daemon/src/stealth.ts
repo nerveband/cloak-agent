@@ -24,7 +24,14 @@ export const PROFILES_DIR = path.join(DATA_DIR, 'profiles');
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const isMac = os.platform() === 'darwin';
+/** Map Node's host platform names to CloakBrowser fingerprint platforms. */
+export function getDefaultFingerprintPlatform(
+  hostPlatform: NodeJS.Platform = os.platform(),
+): NonNullable<StealthOptions['platform']> {
+  if (hostPlatform === 'darwin') return 'macos';
+  if (hostPlatform === 'linux') return 'linux';
+  return 'windows';
+}
 
 /** Extract the key portion of a CLI arg (everything before the first `=`). */
 function argKey(arg: string): string {
@@ -40,7 +47,7 @@ function argKey(arg: string): string {
 export function getDefaultStealthConfig(): StealthConfig {
   return {
     viewport: { width: 1920, height: 947 },
-    platform: isMac ? 'macos' : 'windows',
+    platform: getDefaultFingerprintPlatform(),
   };
 }
 
