@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -110,6 +111,10 @@ func TestCheckWritePermissionWritableDir(t *testing.T) {
 }
 
 func TestCheckWritePermissionReadOnlyDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows directory writability is controlled by ACLs, not Unix mode bits")
+	}
+
 	tmpDir := t.TempDir()
 	roDir := filepath.Join(tmpDir, "readonly")
 	if err := os.MkdirAll(roDir, 0555); err != nil {
@@ -120,7 +125,7 @@ func TestCheckWritePermissionReadOnlyDir(t *testing.T) {
 	exePath := filepath.Join(roDir, "cloak-agent")
 	err := checkWritePermission(exePath)
 	if err == nil {
-		t.Error("expected permission error for read-only dir")
+		t.Fatal("expected permission error for read-only dir")
 	}
 	if !contains(err.Error(), "no write permission") {
 		t.Errorf("expected 'no write permission' in error, got: %v", err)
