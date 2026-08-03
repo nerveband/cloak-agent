@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import path from 'node:path';
 import { toAIFriendlyError, validateFilePath, sanitizeInput, validateRef } from '../src/errors.js';
 
 describe('toAIFriendlyError', () => {
@@ -32,7 +33,8 @@ describe('validateFilePath', () => {
     expect(() => validateFilePath('file\x00name.png')).toThrow('control character');
   });
   it('accepts valid path', () => {
-    expect(validateFilePath('/tmp/screenshot.png')).toBe('/tmp/screenshot.png');
+    const input = '/tmp/screenshot.png';
+    expect(validateFilePath(input)).toBe(path.resolve(input));
   });
   it('accepts relative path without traversal', () => {
     const result = validateFilePath('output.png');
