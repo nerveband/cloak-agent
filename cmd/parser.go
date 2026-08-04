@@ -962,8 +962,23 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			return m, nil
 		case "import":
 			m := map[string]interface{}{"action": "tailgate_import"}
-			if len(rest) > 1 {
-				m["route"] = rest[1]
+			for i := 1; i < len(rest); i++ {
+				switch rest[i] {
+				case "--route":
+					if i+1 >= len(rest) {
+						return nil, fmt.Errorf("tailgate import --route requires a name")
+					}
+					m["route"] = rest[i+1]
+					i++
+				default:
+					if strings.HasPrefix(rest[i], "-") {
+						return nil, fmt.Errorf("unknown tailgate import option: %s", rest[i])
+					}
+					if _, exists := m["route"]; exists {
+						return nil, fmt.Errorf("tailgate import accepts one route name")
+					}
+					m["route"] = rest[i]
+				}
 			}
 			return m, nil
 		case "setup":

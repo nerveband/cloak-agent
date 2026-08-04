@@ -34,6 +34,19 @@ func TestParseTailgateCommands(t *testing.T) {
 	if len(rest) != 2 || rest[0] != "open" {
 		t.Fatalf("unexpected rest: %#v", rest)
 	}
+
+	imported, err := ParseArgs([]string{"tailgate", "import", "--route", "browser-harness"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, imported, "action", "tailgate_import")
+	assertEq(t, imported, "route", "browser-harness")
+
+	positional, err := ParseArgs([]string{"tailgate", "import", "browser-harness"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, positional, "route", "browser-harness")
 }
 
 func assertNoKey(t *testing.T, m map[string]interface{}, key string) {

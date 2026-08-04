@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 — 2026-08-03
+
+- Fix parsing of the documented `tailgate import --route NAME` form.
+
 ## 0.3.0 — 2026-08-03
 
 - Add native per-browser Tailgate routing through a loopback-only SSH dynamic
