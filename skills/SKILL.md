@@ -48,6 +48,29 @@ cloak-agent stealth status
 # All 30 detection tests passed
 ```
 
+## Tailgate egress
+
+Tailgate is cloak-agent's native per-browser Tailscale egress. It creates a
+loopback-only SSH SOCKS tunnel for the selected session; it never changes the
+host route table. A clean install does not need Browser Harness:
+
+```bash
+cloak-agent tailgate setup egress-host --key ~/.ssh/id_tailgate \
+  --known-hosts ~/.ssh/known_hosts
+cloak-agent --session routed --tailgate launch --profile account https://example.com
+cloak-agent --session routed tailgate doctor
+cloak-agent --session routed tailgate stop
+```
+
+Use `--agent` instead of `--key` for a loaded ssh-agent key, or
+`--ssh-config ~/.ssh/config --route NAME` for an alias. `--direct` and
+`CLOAK_AGENT_DIRECT=1` explicitly select direct egress. `CLOAK_AGENT_TAILGATE`
+selects `default` or a named route. Config is private and XDG-aware; profiles
+are physically isolated by session and route. If the established Browser
+Harness wrapper exists, the default route can be discovered for compatibility;
+`tailgate import` persists it, but Browser Harness is never a runtime
+dependency. See `docs/tailgate.md` for setup, recovery, and security details.
+
 ## Core workflow
 
 1. **Navigate:** `cloak-agent open <url>`

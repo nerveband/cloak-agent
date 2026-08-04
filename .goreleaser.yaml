@@ -36,12 +36,18 @@ archives:
         formats: [zip]
     files:
       - README.md
+      - CHANGELOG.md
       - src: daemon/dist/*
         dst: daemon/dist
         strip_parent: true
       - daemon/package.json
       - daemon/package-lock.json
+      - scripts/install.sh
+      - scripts/uninstall.sh
       - scripts/install.ps1
+      - docs/tailgate.md
+      - docs/commands.md
+      - docs/upstream-sync-2026-08-03.md
 
 checksum:
   name_template: "checksums.txt"

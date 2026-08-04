@@ -45,7 +45,7 @@ The daemon (`daemon/src/daemon.ts`) listens on the Unix socket and manages the b
 
 **Stealth module** (`stealth.ts`) — Builds the `--fingerprint-*` CLI args for CloakBrowser's patched Chromium. Manages persistent profiles under `~/.cloak-agent/profiles/`.
 
-**Tailgate integration** (`cmd/tailgate.go`) — Owns optional per-session OpenSSH dynamic SOCKS tunnels. It validates a private JSON config, binds local endpoints, injects a normal CloakBrowser proxy at launch, namespaces routed profiles, and exposes redacted status/doctor output. It never changes system routes.
+**Tailgate integration** (`cmd/tailgate.go`) — Owns optional per-session OpenSSH dynamic SOCKS tunnels. It supports first-run setup, ssh-agent or mode-0600 user keys, explicit Browser Harness compatibility discovery/import, private XDG config/state, loopback-only endpoints, atomic port reservations, direct/routed launch descriptors, transactional launch/close cleanup, and route-namespaced profiles. It relaunches a browser when tunnel recovery changes the proxy port and never changes system routes.
 
 **Error handler** (`errors.ts`) — Translates Playwright errors like "strict mode violation: resolved to 3 elements" into "Selector matched 3 elements. Run 'snapshot' to get updated refs." Also validates file paths and refs to block hallucinated input from agents.
 
@@ -56,9 +56,9 @@ The daemon starts it on `127.0.0.1` with an OS-assigned port and writes that por
 
 The daemon intentionally keeps browser-facing dependencies explicit in `daemon/package.json`:
 
-- `cloakbrowser` `^0.5.2` supplies the patched Chromium runtime, install CLI, and stable/preview binary channels.
-- `playwright-core` `^1.62.0` is the automation API used by the daemon.
-- `ws` `^8.21.1` powers the optional CDP-backed local stream server.
+- `cloakbrowser` `0.5.3` supplies the patched Chromium runtime, install CLI, and stable/preview binary channels.
+- `playwright-core` `1.62.1` is the automation API used by the daemon.
+- `ws` `8.21.2` powers the optional CDP-backed local stream server.
 
 After dependency refreshes, run `npm audit --json` in `daemon/`, `npm test` in `daemon/`, `go test ./...`, and `make build`.
 
@@ -111,6 +111,9 @@ The daemon also auto-launches the browser on the first command that needs one. S
 | `CLOAK_AGENT_PROXY` | Proxy server URL |
 | `CLOAK_AGENT_PROXY_BYPASS` | Proxy bypass list |
 | `CLOAK_AGENT_PROFILE` | Persistent profile name |
+| `CLOAK_AGENT_TAILGATE` | `1`/`true` for `default`, or a named Tailgate route |
+| `CLOAK_AGENT_DIRECT` | `1`/`true` to explicitly select direct egress |
+| `CLOAK_AGENT_TAILGATE_CONFIG` | Private Tailgate config override |
 | `CLOAK_AGENT_ARGS` | Extra Chromium args (comma-separated) |
 | `CLOAK_AGENT_USER_AGENT` | Custom user agent |
 | `CLOAK_AGENT_STATE` | Path to storage state JSON |

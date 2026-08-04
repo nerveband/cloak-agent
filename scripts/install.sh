@@ -24,17 +24,47 @@ echo "Building cloak-agent..."
 echo ""
 echo "Installing to $INSTALL_DIR..."
 
-# Install CLI binary
-mkdir -p "$BIN_DIR"
-cp "$PROJECT_DIR/cloak-agent" "$BIN_PATH"
+# Build a complete staged layout first. Existing profiles/config/state remain
+# in INSTALL_DIR; only the executable and daemon tree are swapped atomically.
+INSTALL_PARENT="$(dirname "$INSTALL_DIR")"
+mkdir -p "$INSTALL_PARENT"
+STAGE_DIR="$(mktemp -d "$INSTALL_PARENT/.cloak-agent-stage.XXXXXX")"
+ROLLBACK_DIR="$(mktemp -d "$INSTALL_PARENT/.cloak-agent-rollback.XXXXXX")"
+cleanup_stage() {
+    rm -rf "$STAGE_DIR" "$ROLLBACK_DIR"
+}
+rollback_install() {
+    set +e
+    if [ -d "$ROLLBACK_DIR/bin" ]; then
+        rm -rf "$INSTALL_DIR/bin"
+        mkdir -p "$INSTALL_DIR"
+        mv "$ROLLBACK_DIR/bin" "$INSTALL_DIR/bin"
+    fi
+    if [ -d "$ROLLBACK_DIR/daemon" ]; then
+        rm -rf "$INSTALL_DIR/daemon"
+        mkdir -p "$INSTALL_DIR"
+        mv "$ROLLBACK_DIR/daemon" "$INSTALL_DIR/daemon"
+    fi
+    cleanup_stage
+}
+trap 'rollback_install' ERR
 
-# Install daemon
-mkdir -p "$INSTALL_DIR/daemon"
-cp -r "$PROJECT_DIR/daemon/dist" "$INSTALL_DIR/daemon/"
-cp "$PROJECT_DIR/daemon/package.json" "$INSTALL_DIR/daemon/"
-cp "$PROJECT_DIR/daemon/package-lock.json" "$INSTALL_DIR/daemon/"
-cd "$INSTALL_DIR/daemon" && npm ci --omit=dev --quiet
-cd "$INSTALL_DIR/daemon" && npx cloakbrowser install
+mkdir -p "$STAGE_DIR/bin" "$STAGE_DIR/daemon"
+cp "$PROJECT_DIR/cloak-agent" "$STAGE_DIR/bin/cloak-agent"
+cp -r "$PROJECT_DIR/daemon/dist" "$STAGE_DIR/daemon/"
+cp "$PROJECT_DIR/daemon/package.json" "$STAGE_DIR/daemon/"
+cp "$PROJECT_DIR/daemon/package-lock.json" "$STAGE_DIR/daemon/"
+(cd "$STAGE_DIR/daemon" && npm ci --omit=dev --quiet)
+(cd "$STAGE_DIR/daemon" && npx cloakbrowser install)
+
+mkdir -p "$INSTALL_DIR"
+if [ -e "$INSTALL_DIR/bin" ]; then mv "$INSTALL_DIR/bin" "$ROLLBACK_DIR/bin"; fi
+if [ -e "$INSTALL_DIR/daemon" ]; then mv "$INSTALL_DIR/daemon" "$ROLLBACK_DIR/daemon"; fi
+mv "$STAGE_DIR/bin" "$INSTALL_DIR/bin"
+mv "$STAGE_DIR/daemon" "$INSTALL_DIR/daemon"
+chmod 0755 "$BIN_PATH"
+trap - ERR
+cleanup_stage
 
 path_contains() {
     case ":$PATH:" in

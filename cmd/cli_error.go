@@ -16,11 +16,12 @@ const (
 )
 
 type CLIError struct {
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Hint     string `json:"hint,omitempty"`
-	Retry    bool   `json:"retryable"`
-	ExitCode int    `json:"-"`
+	Code     string      `json:"code"`
+	Message  string      `json:"message"`
+	Hint     string      `json:"hint,omitempty"`
+	Retry    bool        `json:"retryable"`
+	Details  interface{} `json:"details,omitempty"`
+	ExitCode int         `json:"-"`
 }
 
 func (e *CLIError) Error() string {

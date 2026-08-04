@@ -40,7 +40,7 @@ has "$help" "--yes" && pass "4.4 confirmation skip flag" || fail "4.4 confirmati
 "$CLI" --output json schema launch | grep -q '"_meta"' && pass "4.6 safety metadata" || fail "4.6 safety metadata"
 
 if "$CLI" get text >/tmp/cloak-agent-audit-out 2>/tmp/cloak-agent-audit-err; then fail "5.1 actionable errors"; else grep -qi 'requires' /tmp/cloak-agent-audit-err && pass "5.1 actionable errors" || fail "5.1 actionable errors"; fi
-if timeout 2 "$CLI" open >/dev/null 2>&1; then fail "5.2 fail fast"; else pass "5.2 fail fast"; fi
+if timeout 2 "$CLI" click >/dev/null 2>&1; then fail "5.2 fail fast"; else pass "5.2 fail fast"; fi
 [[ "$c2" == "70" || "$c2" == "69" ]] && pass "5.3 network/timeout distinct" || fail "5.3 network/timeout distinct"
 grep -q '"hint"' /tmp/cloak-agent-audit-err.json && pass "5.4 recovery hint" || fail "5.4 recovery hint"
 if "$CLI" nope 1>/tmp/cloak-agent-audit-stdout 2>/tmp/cloak-agent-audit-stderr; then fail "5.5 stderr"; else [[ ! -s /tmp/cloak-agent-audit-stdout && -s /tmp/cloak-agent-audit-stderr ]] && pass "5.5 stderr" || fail "5.5 stderr"; fi
