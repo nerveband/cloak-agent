@@ -58,6 +58,12 @@ func TestTailgateRejectsSymlinkAndWritableSSHFiles(t *testing.T) {
 	if err := os.WriteFile(known, []byte("known"), 0o666); err != nil {
 		t.Fatal(err)
 	}
+	// The process umask may remove group/other write bits from the mode passed
+	// to WriteFile (notably on macOS).  Set the unsafe mode explicitly so this
+	// test exercises the same invariant on every Unix runner.
+	if err := os.Chmod(known, 0o666); err != nil {
+		t.Fatal(err)
+	}
 	if err := validateTailgateFile(known, false); err == nil {
 		t.Fatal("expected writable known-hosts file to be rejected")
 	}
@@ -249,6 +255,9 @@ func TestTailgateBindingStateMismatchFailsClosed(t *testing.T) {
 }
 
 func TestTailgateRuntimeDirectoryRejectsPermissiveMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission semantics")
+	}
 	t.Setenv("CLOAK_AGENT_SOCKET_DIR", t.TempDir())
 	if err := os.MkdirAll(tailgateDir(), 0o755); err != nil {
 		t.Fatal(err)
@@ -268,7 +277,10 @@ func TestDirectLaunchProfileDescriptorIsPrivateAndRecoverable(t *testing.T) {
 		t.Fatalf("profile descriptor did not recover: %q %v", profile, err)
 	}
 	info, err := os.Stat(directLaunchStatePath("direct-descriptor"))
-	if err != nil || info.Mode().Perm()&0o077 != 0 {
+	if err != nil {
+		t.Fatalf("profile descriptor is not recoverable: %v", err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("profile descriptor permissions are unsafe: %v", err)
 	}
 	if err := commitDirectLaunchProfile("direct-descriptor", ""); err != nil {

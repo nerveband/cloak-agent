@@ -43,6 +43,15 @@ type directLaunchState struct {
 	Profile string `json:"profile,omitempty"`
 }
 
+// Windows does not expose POSIX permission bits through os.FileInfo.  The
+// ownership/symlink checks below still apply there, but treating the
+// synthesized mode bits as authoritative would make every fresh Windows
+// configuration look insecure.  Unix-like hosts retain the fail-closed mode
+// checks that protect private Tailgate state and SSH material.
+func tailgateModeUnsafe(info os.FileInfo, mask os.FileMode) bool {
+	return runtime.GOOS != "windows" && info.Mode().Perm()&mask != 0
+}
+
 func tailgateConfigPath() string {
 	if value := os.Getenv("CLOAK_AGENT_TAILGATE_CONFIG"); value != "" {
 		return expandUserPath(value)
@@ -83,7 +92,7 @@ func ensureTailgateDir() error {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("tailgate runtime directory is unavailable")
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	if tailgateModeUnsafe(info, 0o077) {
 		return fmt.Errorf("tailgate runtime directory must not be accessible by group or other users")
 	}
 	return nil
@@ -94,7 +103,7 @@ func checkTailgateDir() error {
 	if os.IsNotExist(err) {
 		return nil
 	}
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || tailgateModeUnsafe(info, 0o077) {
 		return fmt.Errorf("tailgate runtime directory must not be accessible by group or other users")
 	}
 	return nil
@@ -215,10 +224,10 @@ func validateTailgateFile(path string, private bool) error {
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("file is not a regular non-symlink file")
 	}
-	if private && info.Mode().Perm()&0o077 != 0 {
+	if private && tailgateModeUnsafe(info, 0o077) {
 		return fmt.Errorf("private file permissions are unsafe")
 	}
-	if !private && info.Mode().Perm()&0o022 != 0 {
+	if !private && tailgateModeUnsafe(info, 0o022) {
 		return fmt.Errorf("file is writable by group or other users")
 	}
 	return nil
@@ -241,7 +250,7 @@ func loadTailgateRoute(name string) (tailgateRoute, error) {
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		return tailgateRoute{}, fmt.Errorf("tailgate config unavailable")
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	if tailgateModeUnsafe(info, 0o077) {
 		return tailgateRoute{}, fmt.Errorf("tailgate config must not be accessible by group or other users")
 	}
 	raw, err := os.ReadFile(path)
@@ -384,7 +393,7 @@ func discoveryFileSafe(path string) bool {
 		return false
 	}
 	info, err := os.Lstat(path)
-	return err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 && info.Mode().Perm()&0o022 == 0
+	return err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 && !tailgateModeUnsafe(info, 0o022)
 }
 
 func resolveSSHRoute(target, sshConfig string) (tailgateRoute, error) {
@@ -853,7 +862,7 @@ func readDirectLaunchProfile(session string) (string, error) {
 	if os.IsNotExist(err) {
 		return "", nil
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || tailgateModeUnsafe(info, 0o077) {
 		return "", fmt.Errorf("direct launch state is unavailable or insecure")
 	}
 	raw, err := os.ReadFile(path)
@@ -1116,7 +1125,7 @@ func readTailgateState(session string) (tailgateState, error) {
 		return state, err
 	}
 	info, statErr := os.Lstat(tailgateStatePath(session))
-	if statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+	if statErr != nil || !info.Mode().IsRegular() || tailgateModeUnsafe(info, 0o077) {
 		return state, fmt.Errorf("tailgate state is unavailable or insecure")
 	}
 	raw, err := os.ReadFile(tailgateStatePath(session))
@@ -1141,7 +1150,7 @@ func readTailgateBinding(session string) (string, error) {
 	if os.IsNotExist(err) {
 		return "", nil
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+	if err != nil || !info.Mode().IsRegular() || tailgateModeUnsafe(info, 0o077) {
 		return "", fmt.Errorf("tailgate binding is unavailable or insecure")
 	}
 	raw, err := os.ReadFile(path)
@@ -1355,7 +1364,7 @@ func handleTailgateSetup(action string, command map[string]interface{}, flags Gl
 	configPath := tailgateConfigPath()
 	config := tailgateConfig{Routes: map[string]tailgateRoute{}}
 	if info, statErr := os.Lstat(configPath); statErr == nil {
-		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || tailgateModeUnsafe(info, 0o077) {
 			return fmt.Errorf("existing tailgate config is insecure")
 		}
 		raw, readErr := os.ReadFile(configPath)
@@ -1376,7 +1385,7 @@ func handleTailgateSetup(action string, command map[string]interface{}, flags Gl
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		return err
 	}
-	if info, statErr := os.Stat(filepath.Dir(configPath)); statErr != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
+	if info, statErr := os.Stat(filepath.Dir(configPath)); statErr != nil || !info.IsDir() || tailgateModeUnsafe(info, 0o077) {
 		return fmt.Errorf("tailgate config directory must not be accessible by group or other users")
 	}
 	if err := secureTailgateWrite(configPath, raw); err != nil {
