@@ -9,20 +9,23 @@ import (
 
 // GlobalFlags holds CLI-wide flags extracted before the subcommand.
 type GlobalFlags struct {
-	Session     string // --session <name>, default "default"
-	JSONOutput  bool   // --json / --output json
-	HumanOutput bool   // --output human
-	Quiet       bool   // --quiet / -q
-	InputMode   string // --input json
-	InputFile   string // --input-file <path>
-	Timeout     int    // --timeout <ms>
-	Headed      bool   // --headed
-	DryRun      bool   // --dry-run
-	Fields      string // --fields <comma-separated list>
-	Limit       int    // --limit <n>
-	IDOnly      bool   // --id-only
-	CountOnly   bool   // --count
-	Yes         bool   // --yes / -y
+	Session       string // --session <name>, default "default"
+	JSONOutput    bool   // --json / --output json
+	HumanOutput   bool   // --output human
+	Quiet         bool   // --quiet / -q
+	InputMode     string // --input json
+	InputFile     string // --input-file <path>
+	Timeout       int    // --timeout <ms>
+	Headed        bool   // --headed
+	DryRun        bool   // --dry-run
+	Fields        string // --fields <comma-separated list>
+	Limit         int    // --limit <n>
+	IDOnly        bool   // --id-only
+	CountOnly     bool   // --count
+	Yes           bool   // --yes / -y
+	Tailgate      bool   // --tailgate
+	TailgateRoute string // --tailgate-route <name>
+	Direct        bool   // --direct: explicitly select direct egress
 }
 
 // ParseGlobalFlags extracts global flags from args and returns the remaining
@@ -75,6 +78,17 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string) {
 			gf.DryRun = true
 		case "--yes", "-y", "--force":
 			gf.Yes = true
+		case "--tailgate":
+			gf.Tailgate = true
+		case "--direct":
+			gf.Direct = true
+			gf.Tailgate = false
+		case "--tailgate-route":
+			if i+1 < len(args) {
+				gf.Tailgate = true
+				gf.TailgateRoute = args[i+1]
+				i++
+			}
 		case "--fields":
 			if i+1 < len(args) {
 				gf.Fields = args[i+1]
@@ -935,6 +949,70 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			return nil, fmt.Errorf("unknown profile subcommand: %s", rest[0])
 		}
 
+	case "tailgate":
+		if len(rest) < 1 {
+			return nil, fmt.Errorf("tailgate requires setup, import, status, stop, or doctor")
+		}
+		switch rest[0] {
+		case "status", "stop", "doctor":
+			m := map[string]interface{}{"action": "tailgate_" + rest[0]}
+			if len(rest) > 1 {
+				m["route"] = rest[1]
+			}
+			return m, nil
+		case "import":
+			m := map[string]interface{}{"action": "tailgate_import"}
+			if len(rest) > 1 {
+				m["route"] = rest[1]
+			}
+			return m, nil
+		case "setup":
+			if len(rest) < 2 {
+				return nil, fmt.Errorf("tailgate setup requires a host")
+			}
+			m := map[string]interface{}{"action": "tailgate_setup", "host": rest[1]}
+			for i := 2; i < len(rest); i++ {
+				switch rest[i] {
+				case "--route":
+					if i+1 < len(rest) {
+						m["route"] = rest[i+1]
+						i++
+					}
+				case "--key", "--identity-file":
+					if i+1 < len(rest) {
+						m["identityFile"] = rest[i+1]
+						i++
+					}
+				case "--known-hosts":
+					if i+1 < len(rest) {
+						m["knownHostsFile"] = rest[i+1]
+						i++
+					}
+				case "--ssh-config":
+					if i+1 < len(rest) {
+						m["sshConfig"] = rest[i+1]
+						i++
+					}
+				case "--user":
+					if i+1 < len(rest) {
+						m["user"] = rest[i+1]
+						i++
+					}
+				case "--port":
+					if i+1 < len(rest) {
+						m["port"] = rest[i+1]
+						i++
+					}
+				case "--agent", "--ssh-agent":
+					m["useAgent"] = true
+				default:
+					return nil, fmt.Errorf("unknown tailgate setup option: %s", rest[i])
+				}
+			}
+			return m, nil
+		default:
+			return nil, fmt.Errorf("unknown tailgate subcommand: %s", rest[0])
+		}
 	case "session":
 		if len(rest) < 1 {
 			return nil, fmt.Errorf("session requires a subcommand")

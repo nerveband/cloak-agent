@@ -67,11 +67,21 @@ layout. Windows CI verifies the native Go build and unit-level daemon behavior.
 Browser execution still requires an explicit native Windows runtime test; a Go
 cross-build is not a native test.
 
-Current runtime baseline:
+To remove only the installed executable and daemon while preserving browser
+profiles, Tailgate config, and state:
 
-- `cloakbrowser` `^0.5.2` for the patched Chromium runtime and stable/preview release channels.
-- `playwright-core` `^1.62.0` for browser control.
-- `ws` `^8.21.1` for the optional CDP-backed local viewport stream server.
+```bash
+./scripts/uninstall.sh
+```
+
+Use `./scripts/uninstall.sh --purge` only when you explicitly want those user
+profiles and config roots removed as well.
+
+Current runtime baseline (locked in `daemon/package-lock.json`):
+
+- `cloakbrowser` `0.5.3` for the patched Chromium runtime and stable/preview release channels.
+- `playwright-core` `1.62.1` for browser control.
+- `ws` `8.21.2` for the optional CDP-backed local viewport stream server.
 
 ## Quick start
 
@@ -180,6 +190,32 @@ cloak-agent fingerprint rotate --seed 42 # Deterministic fingerprint
 cloak-agent profile create shopping      # Persistent browser profile
 cloak-agent profile list                 # List profiles
 ```
+
+### Per-browser tailgate
+
+Tailgate can route one named browser session through a loopback-only SSH SOCKS tunnel without changing the host route table:
+
+```bash
+cloak-agent --session routed --tailgate launch --profile account https://example.com
+cloak-agent --session routed tailgate status
+cloak-agent --session routed tailgate stop
+```
+
+Set up a route on a clean clone without copying a key:
+
+```bash
+cloak-agent tailgate setup egress-host --key ~/.ssh/id_tailgate \
+  --known-hosts ~/.ssh/known_hosts
+# or use a loaded ssh-agent key:
+cloak-agent tailgate setup egress-host --agent --known-hosts ~/.ssh/known_hosts
+```
+
+`tailgate setup`, `tailgate doctor`, `--direct`, `CLOAK_AGENT_TAILGATE`, and
+`CLOAK_AGENT_DIRECT` are portable across Linux/macOS and use XDG config/state
+roots. If the existing Browser Harness Tailgate wrapper is present, the
+default route can be discovered without redundant config; `tailgate import`
+persists it. Configuration, key-only SSH requirements, profile isolation,
+recovery, and diagnostics are documented in [docs/tailgate.md](docs/tailgate.md).
 
 ### Launch / daemon lifecycle
 
@@ -445,6 +481,7 @@ More detail: [docs/architecture.md](docs/architecture.md)
 - [Interaction playbook](docs/interaction-playbook.md) — practical browser workflows, credited to browser-harness as inspiration
 - [Architecture](docs/architecture.md) — how the CLI and daemon communicate
 - [Stealth guide](docs/stealth.md) — fingerprints, profiles, detection evasion
+- [Tailgate routing](docs/tailgate.md) — per-session SSH SOCKS routing
 
 ## Running tests
 

@@ -15,7 +15,7 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.2.0"
+var Version = "0.3.0"
 
 func Execute(args []string) error {
 	if len(args) == 0 {
@@ -118,6 +118,13 @@ func Execute(args []string) error {
 
 	ensureCommandID(command)
 	applyGlobalCommandFlags(command, flags)
+	if err := prepareTailgate(command, flags); err != nil {
+		return err
+	}
+	pendingTailgateRoute, _ := command["_tailgateRoute"].(string)
+	pendingTailgateProfile, _ := command["_tailgateProfile"].(string)
+	delete(command, "_tailgateRoute")
+	delete(command, "_tailgateProfile")
 
 	var restoreHeadedEnv func()
 	if action, ok := command["action"].(string); ok && flags.Headed && action != "launch" {
@@ -139,16 +146,58 @@ func Execute(args []string) error {
 
 	respBytes, err := SendCommand(flags.Session, jsonBytes, timeout)
 	if err != nil {
+		if pendingTailgateRoute != "" {
+			_ = releaseTailgateSession(flags.Session, pendingTailgateRoute)
+		}
 		return fmt.Errorf("failed to send command: %w", err)
 	}
 
 	// Parse response
 	var resp Response
 	if err := json.Unmarshal(respBytes, &resp); err != nil {
+		if pendingTailgateRoute != "" {
+			_ = releaseTailgateSession(flags.Session, pendingTailgateRoute)
+		}
 		return fmt.Errorf("invalid response from daemon: %w", err)
 	}
 
-	// Format and print
+	if !resp.IsSuccess() {
+		if pendingTailgateRoute != "" {
+			// The tunnel is only useful to a successfully launched browser. Best
+			// effort cleanup is intentionally performed before returning the daemon
+			// error; a later doctor/stop still fails closed if it cannot verify it.
+			_ = releaseTailgateSession(flags.Session, pendingTailgateRoute)
+		}
+		return NewCLIError("command_failed", resp.Error, "Inspect the command response, re-snapshot stale refs, or run with --dry-run before mutating actions.", false, ExitInternal)
+	}
+	if pendingTailgateRoute != "" {
+		state, stateErr := readTailgateState(flags.Session)
+		if stateErr != nil {
+			_ = releaseTailgateSession(flags.Session, pendingTailgateRoute)
+			return fmt.Errorf("tailgate launch succeeded but its recovery state could not be recorded")
+		}
+		state.Profile = pendingTailgateProfile
+		if err := commitTailgateLaunch(flags.Session, pendingTailgateRoute, state); err != nil {
+			_ = releaseTailgateSession(flags.Session, pendingTailgateRoute)
+			return fmt.Errorf("tailgate launch succeeded but its recovery state could not be recorded")
+		}
+	}
+	if action, _ := command["action"].(string); action == "launch" && pendingTailgateRoute == "" && !flags.DryRun {
+		// Direct launches keep only the named profile in a private per-session
+		// descriptor. Proxy/host material is never persisted here; routed launches
+		// use the separate Tailgate descriptor above.
+		profile, _ := command["profile"].(string)
+		if err := commitDirectLaunchProfile(flags.Session, profile); err != nil {
+			return fmt.Errorf("direct launch succeeded but its profile state could not be recorded")
+		}
+	}
+	if action, _ := command["action"].(string); action == "close" && !flags.DryRun {
+		if err := cleanupTailgateAfterClose(flags.Session); err != nil {
+			return err
+		}
+	}
+
+	// Format and print only after all local recovery bookkeeping succeeds.
 	PrintResponse(resp, flags)
 
 	// Show update notice if available (non-blocking)
@@ -160,10 +209,6 @@ func Execute(args []string) error {
 			}
 		default:
 		}
-	}
-
-	if !resp.IsSuccess() {
-		return NewCLIError("command_failed", resp.Error, "Inspect the command response, re-snapshot stale refs, or run with --dry-run before mutating actions.", false, ExitInternal)
 	}
 
 	return nil
@@ -190,6 +235,10 @@ func executeSpecialCommand(command map[string]interface{}, flags GlobalFlags) (b
 		return true, handleDaemonLogs(flags)
 	case "doctor":
 		return true, handleDoctor(flags)
+	case "tailgate_status", "tailgate_stop", "tailgate_doctor":
+		return true, handleTailgateCommand(action, command, flags)
+	case "tailgate_setup", "tailgate_import":
+		return true, handleTailgateSetup(action, command, flags)
 	default:
 		return false, nil
 	}
@@ -467,6 +516,7 @@ func handleDoctor(flags GlobalFlags) error {
 			"daemonDir":  daemonDir != "",
 			"daemonFile": daemonErr == nil,
 		},
+		"tailgate": tailgateDoctorData(flags.Session, ""),
 	}
 	if daemonErr != nil {
 		data["daemonJSError"] = daemonErr.Error()
@@ -559,6 +609,16 @@ Daemon / sessions:
   session list                   List known sessions
   doctor                         Check install, daemon, Node, and browser runtime
 
+Tailgate routing:
+  tailgate setup <host> [options]  Create a private SSH/Tailscale route
+    --key <path> --known-hosts <path> --user <name> --port <n>
+    --agent (use the user's loaded ssh-agent key)
+    --ssh-config <path> --route <name>
+  tailgate import [--route name]   Import an existing Browser Harness target
+  tailgate status [route]        Inspect the session's local SOCKS tunnel
+  tailgate stop [route]          Stop the session's local SOCKS tunnel
+  tailgate doctor [route]        Validate SSH/config prerequisites
+
 Stealth (cloak-agent exclusive):
   stealth status                 Run bot detection tests
   fingerprint rotate [--seed N]  New browser fingerprint
@@ -586,6 +646,9 @@ Global Flags:
   --headed                       Show browser window
   --dry-run                      Validate without executing
   --yes, -y, --force             Non-interactive confirmation flag
+  --tailgate                     Route this browser through the default tailgate
+  --tailgate-route <name>        Route through a named configured tailgate
+  --direct                       Explicitly select direct browser egress
   --fields <list>                Limit response fields (human mode)
   --limit <n>                    Limit collection output
   --id-only                      Return only identifiers where possible

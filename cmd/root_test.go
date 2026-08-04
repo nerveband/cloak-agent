@@ -72,3 +72,15 @@ func TestInstallScriptAvoidsUsrLocalOnlyPath(t *testing.T) {
 		t.Fatalf("expected %s not to rely only on /usr/local/bin", scriptPath)
 	}
 }
+
+func TestInstallScriptUsesLockedProductionDependencies(t *testing.T) {
+	scriptPath := filepath.Join("..", "scripts", "install.sh")
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "package-lock.json") || !strings.Contains(text, "npm ci --omit=dev") {
+		t.Fatalf("expected %s to install the locked production dependency set", scriptPath)
+	}
+}

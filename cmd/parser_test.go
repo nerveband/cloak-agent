@@ -19,6 +19,23 @@ func assertEq(t *testing.T, m map[string]interface{}, key string, want interface
 	}
 }
 
+func TestParseTailgateCommands(t *testing.T) {
+	m, err := ParseArgs([]string{"tailgate", "doctor", "route-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "tailgate_doctor")
+	assertEq(t, m, "route", "route-a")
+
+	flags, rest := ParseGlobalFlags([]string{"--session", "routed", "--tailgate-route", "route-a", "open", "https://example.com"})
+	if !flags.Tailgate || flags.TailgateRoute != "route-a" || flags.Session != "routed" {
+		t.Fatalf("unexpected flags: %#v", flags)
+	}
+	if len(rest) != 2 || rest[0] != "open" {
+		t.Fatalf("unexpected rest: %#v", rest)
+	}
+}
+
 func assertNoKey(t *testing.T, m map[string]interface{}, key string) {
 	t.Helper()
 	if _, ok := m[key]; ok {

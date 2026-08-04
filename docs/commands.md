@@ -24,6 +24,22 @@ cloak-agent close                         # Close browser and stop daemon
 
 Launch accepts agent-friendly runtime flags like `--profile`, `--proxy`, `--timezone`, `--locale`, `--viewport`, `--geoip`, `--humanize`, `--human-preset`, `--human-config`, `--fingerprint-seed`, `--platform`, `--gpu-vendor`, `--gpu-renderer`, `--user-agent`, `--executable-path`, `--storage-state`, `--ignore-https-errors`, `--context-options`, and repeatable `--arg`.
 
+Global `--tailgate` selects the private `default` SSH route. `--tailgate-route <name>` selects a named route. Use `tailgate status`, `tailgate doctor`, and `tailgate stop` with the same `--session`. See [tailgate.md](tailgate.md).
+
+Create a route without editing JSON:
+
+```bash
+cloak-agent tailgate setup <ssh-host> --key ~/.ssh/id_tailgate --known-hosts ~/.ssh/known_hosts
+cloak-agent tailgate setup <ssh-host> --agent --known-hosts ~/.ssh/known_hosts
+cloak-agent tailgate setup <ssh-alias> --ssh-config ~/.ssh/config --route work
+cloak-agent tailgate import --route browser-harness
+```
+
+`--direct` and `CLOAK_AGENT_DIRECT=1` explicitly select direct egress. The
+config path is `$CLOAK_AGENT_TAILGATE_CONFIG`, then
+`$XDG_CONFIG_HOME/cloak-agent/tailgate.json`, then
+`~/.config/cloak-agent/tailgate.json` (with a legacy fallback when present).
+
 ## Snapshots
 
 The core tool for agents. Returns the page's accessibility tree with element refs.
@@ -253,9 +269,15 @@ cloak-agent profile list               # List all profiles
 ```bash
 cloak-agent upgrade                    # Download latest version and refresh runtime
 cloak-agent version                    # Print current version
+./scripts/uninstall.sh                 # Remove binary/daemon, preserve profiles/config
+./scripts/uninstall.sh --purge         # Explicitly remove install and user state
 ```
 
-Update checks run in the background (once per 24 hours) and print a notice after your command finishes. No startup delay, no interruptions.
+Source and archive installs stage the compiled CLI and daemon, bootstrap
+locked production dependencies plus the compatible CloakBrowser runtime, then
+atomically swap the executable/daemon tree. A failed swap rolls back. Update
+checks run in the background (once per 24 hours) and print a notice after your
+command finishes. No startup delay, no interruptions.
 
 ## Schema introspection (for AI agents)
 

@@ -48,6 +48,29 @@ cloak-agent stealth status
 # All 30 detection tests passed
 ```
 
+## Tailgate egress
+
+Tailgate is cloak-agent's native per-browser Tailscale egress. It creates a
+loopback-only SSH SOCKS tunnel for the selected session; it never changes the
+host route table. A clean install does not need Browser Harness:
+
+```bash
+cloak-agent tailgate setup egress-host --key ~/.ssh/id_tailgate \
+  --known-hosts ~/.ssh/known_hosts
+cloak-agent --session routed --tailgate launch --profile account https://example.com
+cloak-agent --session routed tailgate doctor
+cloak-agent --session routed tailgate stop
+```
+
+Use `--agent` instead of `--key` for a loaded ssh-agent key, or
+`--ssh-config ~/.ssh/config --route NAME` for an alias. `--direct` and
+`CLOAK_AGENT_DIRECT=1` explicitly select direct egress. `CLOAK_AGENT_TAILGATE`
+selects `default` or a named route. Config is private and XDG-aware; profiles
+are physically isolated by session and route. If the established Browser
+Harness wrapper exists, the default route can be discovered for compatibility;
+`tailgate import` persists it, but Browser Harness is never a runtime
+dependency. See `docs/tailgate.md` for setup, recovery, and security details.
+
 ## Core workflow
 
 1. **Navigate:** `cloak-agent open <url>`
@@ -356,6 +379,19 @@ cloak-agent --json '{"action":"navigate","url":"https://example.com","waitUntil"
 | `CLOAK_AGENT_STATE` | Path to storage state JSON |
 | `CLOAK_AGENT_IGNORE_HTTPS_ERRORS` | Ignore HTTPS errors |
 | `CLOAK_AGENT_EXECUTABLE_PATH` | Custom Chromium binary |
+| `CLOAK_AGENT_TAILGATE` | `1` for the default tailgate route or a configured route name |
+| `CLOAK_AGENT_TAILGATE_CONFIG` | Private tailgate JSON config path |
+
+### Per-browser tailgate
+
+```bash
+cloak-agent --session routed --tailgate launch --profile account https://example.com
+cloak-agent --session routed tailgate doctor
+cloak-agent --session routed tailgate status
+cloak-agent --session routed tailgate stop
+```
+
+Use a dedicated session for routed browsing. Tailgate uses a loopback SSH SOCKS tunnel and a route-namespaced persistent profile; it does not change host routes. See `docs/tailgate.md` in the repository for the private config format.
 
 ## Example: Form submission
 
