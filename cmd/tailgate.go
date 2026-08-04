@@ -631,39 +631,63 @@ func ensureTailgateTunnel(session, name string) (tailgateState, error) {
 		releaseTailgatePort(saved.Port)
 	}
 	_ = os.Remove(tailgateStatePath(session))
-	state.Port, err = reserveTailgatePort()
-	if err != nil {
-		return tailgateState{}, err
-	}
-	args := append(sshArgs(route, control), "-f", "-N", "-T", "-D", fmt.Sprintf("127.0.0.1:%d", state.Port), route.SSHHost)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	if err := exec.CommandContext(ctx, ssh, args...).Run(); err != nil {
-		releaseTailgatePort(state.Port)
-		return tailgateState{}, fmt.Errorf("tailgate SSH tunnel failed; run 'cloak-agent tailgate doctor %s'", name)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if tunnelAlive(route, control) {
-			if !tailgateSOCKSReady(state.Port) {
-				_ = stopTailgateTunnel(session, name)
-				releaseTailgatePort(state.Port)
-				_ = os.Remove(tailgateStatePath(session))
-				return tailgateState{}, fmt.Errorf("tailgate SOCKS endpoint did not become ready")
-			}
-			raw, _ := json.Marshal(state)
-			if err := secureTailgateWrite(tailgateStatePath(session), raw); err != nil {
-				_ = stopTailgateTunnel(session, name)
-				releaseTailgatePort(state.Port)
-				return tailgateState{}, err
-			}
-			return state, nil
+	// Reserving a loopback port and starting SSH cannot be made one atomic
+	// kernel operation: ssh must own the port after the reservation listener is
+	// closed. Keep the private marker through each attempt and retry a bounded
+	// number of times so a concurrent local listener or a stale SSH partial
+	// start fails closed instead of being reported as a working route.
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		state.Port, err = reserveTailgatePort()
+		if err != nil {
+			lastErr = err
+			break
 		}
-		time.Sleep(50 * time.Millisecond)
+		args := append(sshArgs(route, control), "-f", "-N", "-T", "-D", fmt.Sprintf("127.0.0.1:%d", state.Port), route.SSHHost)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		startErr := exec.CommandContext(ctx, ssh, args...).Run()
+		cancel()
+		if startErr != nil {
+			lastErr = fmt.Errorf("tailgate SSH tunnel failed; run 'cloak-agent tailgate doctor %s'", name)
+			if tunnelAlive(route, control) {
+				_ = stopTailgateTunnel(session, name)
+			}
+			_ = removeTailgateControl(control)
+			releaseTailgatePort(state.Port)
+			continue
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if tunnelAlive(route, control) {
+				if !tailgateSOCKSReady(state.Port) {
+					lastErr = fmt.Errorf("tailgate SOCKS endpoint did not become ready")
+					_ = stopTailgateTunnel(session, name)
+					_ = removeTailgateControl(control)
+					releaseTailgatePort(state.Port)
+					break
+				}
+				raw, _ := json.Marshal(state)
+				if err := secureTailgateWrite(tailgateStatePath(session), raw); err != nil {
+					_ = stopTailgateTunnel(session, name)
+					_ = removeTailgateControl(control)
+					releaseTailgatePort(state.Port)
+					return tailgateState{}, err
+				}
+				return state, nil
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if lastErr == nil || !strings.Contains(lastErr.Error(), "SOCKS endpoint") {
+			lastErr = fmt.Errorf("tailgate SSH control endpoint did not become ready")
+		}
+		_ = stopTailgateTunnel(session, name)
+		_ = removeTailgateControl(control)
+		releaseTailgatePort(state.Port)
 	}
-	_ = stopTailgateTunnel(session, name)
-	releaseTailgatePort(state.Port)
-	return tailgateState{}, fmt.Errorf("tailgate SSH control endpoint did not become ready")
+	if lastErr == nil {
+		lastErr = fmt.Errorf("tailgate SSH tunnel could not be started")
+	}
+	return tailgateState{}, lastErr
 }
 
 func isolatedTailgateProfile(session, route, profile string) string {
