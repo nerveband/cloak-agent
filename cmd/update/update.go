@@ -22,6 +22,7 @@ const (
 // Cache stores the last version check result.
 type Cache struct {
 	LastCheck      time.Time `json:"last_check"`
+	CurrentVersion string    `json:"current_version"`
 	LatestVersion  string    `json:"latest_version"`
 	UpdateRequired bool      `json:"update_required"`
 }
@@ -55,7 +56,7 @@ func Check(currentVersion string) (hasUpdate bool, latestVersion string, err err
 	}
 
 	cached, err := loadCache()
-	if err == nil && time.Since(cached.LastCheck) < 24*time.Hour {
+	if err == nil && cacheIsFreshForVersion(cached, currentVersion, time.Now()) {
 		return cached.UpdateRequired, cached.LatestVersion, nil
 	}
 
@@ -76,12 +77,18 @@ func Check(currentVersion string) (hasUpdate bool, latestVersion string, err err
 	latestVer := latest.Version()
 
 	saveCache(Cache{
+		CurrentVersion: currentVersion,
 		LastCheck:      time.Now(),
 		LatestVersion:  latestVer,
 		UpdateRequired: hasUpdate,
 	})
 
 	return hasUpdate, latestVer, nil
+}
+func cacheIsFreshForVersion(cache *Cache, currentVersion string, now time.Time) bool {
+	return cache.CurrentVersion == currentVersion &&
+		now.Sub(cache.LastCheck) >= 0 &&
+		now.Sub(cache.LastCheck) < 24*time.Hour
 }
 
 // Upgrade downloads and installs the latest version.

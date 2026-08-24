@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3 — 2026-08-24
+
+- Scope update-check caches to the installed version so an upgrade never
+  advertises an older cached release as newer.
+
 ## 0.4.2 — 2026-08-24
 
 - Update the locked CloakBrowser wrapper from 0.5.3 to 0.5.8. The latest free

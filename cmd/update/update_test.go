@@ -98,6 +98,21 @@ func TestCacheRoundTrip(t *testing.T) {
 		t.Error("expected UpdateRequired to be true")
 	}
 }
+func TestCacheIsScopedToCurrentVersion(t *testing.T) {
+	now := time.Now()
+	cache := &Cache{
+		LastCheck:      now.Add(-time.Hour),
+		CurrentVersion: "0.3.1",
+		LatestVersion:  "0.4.2",
+		UpdateRequired: true,
+	}
+	if cacheIsFreshForVersion(cache, "0.4.2", now) {
+		t.Fatal("cache from an older installed version must not be reused")
+	}
+	if !cacheIsFreshForVersion(cache, "0.3.1", now) {
+		t.Fatal("cache should remain valid for the version that produced it")
+	}
+}
 
 func TestCheckWritePermissionWritableDir(t *testing.T) {
 	tmpDir := t.TempDir()
