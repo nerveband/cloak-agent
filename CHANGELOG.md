@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-08-24
+
+- Add Linux private proxy CA trust through `--ca-cert`, isolated temporary NSS
+  databases, PEM bundle and DER validation, and explicit `--no-ca-cert`
+  clearing without disabling ordinary TLS verification.
+- Sync the compatibility review through agent-browser 0.35.0. External Chrome
+  tab pinning and provider-specific deployment skills remain intentionally
+  outside cloak-agent's local CloakBrowser architecture.
+
 ## 0.3.1 — 2026-08-03
 
 - Fix parsing of the documented `tailgate import --route NAME` form.

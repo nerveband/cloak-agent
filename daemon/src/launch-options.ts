@@ -29,6 +29,8 @@ export function buildLaunchOptions(command: LaunchCommand): BrowserLaunchOptions
   if (command.storageState) options.storageState = command.storageState;
   if (command.ignoreHTTPSErrors !== undefined) options.ignoreHTTPSErrors = command.ignoreHTTPSErrors;
   if (command.profile) options.profile = command.profile;
+  if (command.caCert) options.caCert = command.caCert;
+  if (command.clearCaCert !== undefined) options.clearCaCert = command.clearCaCert;
 
   return options;
 }

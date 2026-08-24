@@ -6,6 +6,7 @@ import { buildStealthArgs, ensureProfileDir } from './stealth.js';
 import { getEnhancedSnapshot, type RefData, type SnapshotOptions } from './snapshot.js';
 import { toAIFriendlyError } from './errors.js';
 import type { StealthOptions } from './stealth.js';
+import { prepareCATrust, type PreparedCATrust } from './ca-trust.js';
 
 // ── Launch options ──────────────────────────────────────────────────────────
 
@@ -29,6 +30,8 @@ export interface BrowserLaunchOptions extends StealthOptions {
   humanPreset?: 'default' | 'careful';
   humanConfig?: Record<string, unknown>;
   contextOptions?: BrowserContextOptions;
+  caCert?: string;
+  clearCaCert?: boolean;
 }
 
 export interface StreamMouseInput {
@@ -96,6 +99,7 @@ export class BrowserManager {
   private tabIds = new Map<Page, string>();
   private tabLabels = new Map<string, Page>();
   private nextTabId = 1;
+  private preparedCATrust: PreparedCATrust | null = null;
 
   // ── Query state ─────────────────────────────────────────────────────────
 
@@ -118,61 +122,84 @@ export class BrowserManager {
   // ── Launch ──────────────────────────────────────────────────────────────
 
   async launch(options: BrowserLaunchOptions = {}): Promise<void> {
+    if (options.caCert && options.clearCaCert) {
+      throw new Error('Cannot use --ca-cert with --no-ca-cert');
+    }
+    if (options.caCert && options.profile) {
+      throw new Error('--ca-cert cannot be combined with --profile because isolated CA trust changes the profile NSS environment');
+    }
+    if (options.caCert && options.ignoreHTTPSErrors) {
+      throw new Error('--ca-cert cannot be combined with --ignore-https-errors');
+    }
     if (this.isLaunched()) {
       await this.close({ preserveLaunchOptions: true });
     }
 
-    const args = buildStealthArgs(options);
-    const viewport = options.viewport ?? { width: 1920, height: 947 };
-    const contextOptions: BrowserContextOptions = {
-      ...(options.contextOptions ?? {}),
-      ...(options.storageState ? { storageState: options.storageState } : {}),
-      ...(options.ignoreHTTPSErrors !== undefined ? { ignoreHTTPSErrors: options.ignoreHTTPSErrors } : {}),
-    };
+    let preparedCATrust: PreparedCATrust | null = null;
+    try {
+      preparedCATrust = options.caCert ? await prepareCATrust(options.caCert) : null;
+      const args = buildStealthArgs(options);
+      const viewport = options.viewport ?? { width: 1920, height: 947 };
+      const contextOptions: BrowserContextOptions = {
+        ...(options.contextOptions ?? {}),
+        ...(options.storageState ? { storageState: options.storageState } : {}),
+        ...(options.ignoreHTTPSErrors !== undefined ? { ignoreHTTPSErrors: options.ignoreHTTPSErrors } : {}),
+      };
+      const launchEnv = preparedCATrust
+        ? {
+            ...process.env,
+            HOME: preparedCATrust.homeDir,
+            XDG_DATA_HOME: `${preparedCATrust.homeDir}/.local/share`,
+          }
+        : undefined;
 
-    const baseOptions: Record<string, unknown> = {
-      headless: options.headless ?? true,
-      args,
-      locale: options.locale,
-      timezone: options.timezone,
-      userAgent: options.userAgent,
-      viewport,
-      proxy: options.proxy as any,
-      geoip: options.geoip,
-      browserVersion: options.browserVersion,
-      releaseChannel: options.releaseChannel,
-      extensionPaths: options.extensionPaths,
-      humanize: options.humanize,
-      humanPreset: options.humanPreset,
-      humanConfig: options.humanConfig,
-      contextOptions,
-      launchOptions: options.executablePath ? { executablePath: options.executablePath } : undefined,
-    };
+      const baseOptions: Record<string, unknown> = {
+        headless: options.headless ?? true,
+        args,
+        locale: options.locale,
+        timezone: options.timezone,
+        userAgent: options.userAgent,
+        viewport,
+        proxy: options.proxy,
+        geoip: options.geoip,
+        browserVersion: options.browserVersion,
+        releaseChannel: options.releaseChannel,
+        extensionPaths: options.extensionPaths,
+        humanize: options.humanize,
+        humanPreset: options.humanPreset,
+        humanConfig: options.humanConfig,
+        contextOptions,
+        launchOptions: options.executablePath || launchEnv
+          ? { executablePath: options.executablePath, env: launchEnv }
+          : undefined,
+      };
 
-    if (options.profile) {
-      const userDataDir = ensureProfileDir(options.profile);
-      this.isPersistentContext = true;
+      if (options.profile) {
+        const userDataDir = ensureProfileDir(options.profile);
+        this.isPersistentContext = true;
+        const context = await launchPersistentContext({
+          ...baseOptions,
+          userDataDir,
+        } as any);
+        this.contexts.push(context);
+        const page = context.pages()[0] ?? await context.newPage();
+        this.registerPage(page);
+      } else {
+        const context = await launchContext(baseOptions as any);
+        this.contexts.push(context);
+        const page = await context.newPage();
+        this.registerPage(page);
+      }
 
-      const context = await launchPersistentContext({
-        ...baseOptions,
-        userDataDir,
-      } as any);
-      this.contexts.push(context);
-      const page = context.pages()[0] ?? await context.newPage();
-      this.registerPage(page);
-    } else {
-      const context = await launchContext(baseOptions as any);
-      this.contexts.push(context);
-
-      const page = await context.newPage();
-      this.registerPage(page);
+      for (const context of this.contexts) {
+        context.on('page', (page) => this.registerPage(page));
+      }
+      this.preparedCATrust = preparedCATrust;
+      this.lastLaunchOptions = { ...options, clearCaCert: undefined };
+    } catch (error) {
+      await preparedCATrust?.cleanup();
+      throw error;
     }
-
-    for (const context of this.contexts) {
-      context.on('page', (page) => this.registerPage(page));
-    }
-
-    this.lastLaunchOptions = { ...options };
   }
 
   // ── Page listeners ──────────────────────────────────────────────────────
@@ -633,6 +660,8 @@ export class BrowserManager {
         // ignore
       }
     }
+    await this.preparedCATrust?.cleanup();
+    this.preparedCATrust = null;
 
     // Reset all state
     this.browser = null;

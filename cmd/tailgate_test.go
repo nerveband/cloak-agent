@@ -30,6 +30,9 @@ func writeTailgateFixture(t *testing.T, mode os.FileMode) string {
 	if err := os.WriteFile(path, raw, mode); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("CLOAK_AGENT_TAILGATE_CONFIG", path)
 	return path
 }
@@ -260,6 +263,9 @@ func TestTailgateRuntimeDirectoryRejectsPermissiveMode(t *testing.T) {
 	}
 	t.Setenv("CLOAK_AGENT_SOCKET_DIR", t.TempDir())
 	if err := os.MkdirAll(tailgateDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tailgateDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := checkTailgateDir(); err == nil {

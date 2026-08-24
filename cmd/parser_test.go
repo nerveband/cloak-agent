@@ -525,6 +525,22 @@ func TestParseArgs_CDPRejectsNonObjectParams(t *testing.T) {
 		t.Fatal("expected error for non-object CDP params")
 	}
 }
+func TestParseGlobalFlagsCACert(t *testing.T) {
+	flags, rest := ParseGlobalFlags([]string{"--ca-cert", "/tmp/proxy-ca.pem", "launch", "https://example.com"})
+	if flags.CACert != "/tmp/proxy-ca.pem" || flags.ClearCACert {
+		t.Fatalf("unexpected CA flags: %#v", flags)
+	}
+	if len(rest) != 2 || rest[0] != "launch" {
+		t.Fatalf("unexpected remaining args: %#v", rest)
+	}
+}
+
+func TestParseGlobalFlagsNoCACertClearsEarlierValue(t *testing.T) {
+	flags, _ := ParseGlobalFlags([]string{"--ca-cert", "/tmp/proxy-ca.pem", "--no-ca-cert", "launch"})
+	if flags.CACert != "" || !flags.ClearCACert {
+		t.Fatalf("unexpected CA flags: %#v", flags)
+	}
+}
 
 func TestParseArgs_SetDeviceUsesNameField(t *testing.T) {
 	m, err := ParseArgs([]string{"set", "device", "iPhone 14"})

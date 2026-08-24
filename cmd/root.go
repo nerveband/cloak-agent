@@ -15,7 +15,7 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.3.1"
+var Version = "0.4.0"
 
 func Execute(args []string) error {
 	if len(args) == 0 {
@@ -117,7 +117,9 @@ func Execute(args []string) error {
 	}
 
 	ensureCommandID(command)
-	applyGlobalCommandFlags(command, flags)
+	if err := applyGlobalCommandFlags(command, flags); err != nil {
+		return err
+	}
 	if err := prepareTailgate(command, flags); err != nil {
 		return err
 	}
@@ -251,13 +253,35 @@ func ensureCommandID(command map[string]interface{}) {
 	command["id"] = generateID()
 }
 
-func applyGlobalCommandFlags(command map[string]interface{}, flags GlobalFlags) {
+func applyGlobalCommandFlags(command map[string]interface{}, flags GlobalFlags) error {
 	if flags.DryRun {
 		command["dryRun"] = true
 	}
-	if flags.Headed {
-		if action, ok := command["action"].(string); ok && action == "launch" {
-			command["headless"] = false
+	action, _ := command["action"].(string)
+	if flags.Headed && action == "launch" {
+		command["headless"] = false
+	}
+	if action == "launch" {
+		caCert := flags.CACert
+		clearCACert := flags.ClearCACert
+		if caCert == "" && !clearCACert {
+			caCert = strings.TrimSpace(os.Getenv("CLOAK_AGENT_CA_CERT"))
+			clearCACert = envBool("CLOAK_AGENT_CLEAR_CA_CERT")
+		}
+		if caCert != "" && clearCACert {
+			return fmt.Errorf("cannot use --ca-cert with --no-ca-cert")
+		}
+		if caCert != "" {
+			if _, hasProfile := command["profile"]; hasProfile {
+				return fmt.Errorf("--ca-cert cannot be combined with --profile")
+			}
+			if ignore, _ := command["ignoreHTTPSErrors"].(bool); ignore {
+				return fmt.Errorf("--ca-cert cannot be combined with --ignore-https-errors")
+			}
+			command["caCert"] = caCert
+		}
+		if clearCACert {
+			command["clearCaCert"] = true
 		}
 	}
 	if flags.Limit > 0 {
@@ -272,6 +296,12 @@ func applyGlobalCommandFlags(command map[string]interface{}, flags GlobalFlags) 
 	if flags.Yes {
 		command["yes"] = true
 	}
+	return nil
+}
+
+func envBool(name string) bool {
+	value := strings.TrimSpace(os.Getenv(name))
+	return value == "1" || strings.EqualFold(value, "true")
 }
 
 func generateID() string {
@@ -678,6 +708,8 @@ Launch flags:
   --executable-path <path>       Use a specific browser executable
   --storage-state <path>         Apply Playwright storage state on launch
   --ignore-https-errors          Ignore TLS certificate errors
+  --ca-cert <path>               Trust a CA certificate or PEM bundle (Linux; requires certutil)
+  --no-ca-cert                   Clear CA trust for the new launch
   --context-options <json>       Extra Playwright context options JSON object
   --arg <flag>                   Extra Chromium/CloakBrowser arg (repeatable)
 

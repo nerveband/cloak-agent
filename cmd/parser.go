@@ -26,6 +26,8 @@ type GlobalFlags struct {
 	Tailgate      bool   // --tailgate
 	TailgateRoute string // --tailgate-route <name>
 	Direct        bool   // --direct: explicitly select direct egress
+	CACert        string // --ca-cert <path>
+	ClearCACert   bool   // --no-ca-cert
 }
 
 // ParseGlobalFlags extracts global flags from args and returns the remaining
@@ -89,6 +91,15 @@ func ParseGlobalFlags(args []string) (GlobalFlags, []string) {
 				gf.TailgateRoute = args[i+1]
 				i++
 			}
+		case "--ca-cert":
+			if i+1 < len(args) {
+				gf.CACert = args[i+1]
+				gf.ClearCACert = false
+				i++
+			}
+		case "--no-ca-cert":
+			gf.CACert = ""
+			gf.ClearCACert = true
 		case "--fields":
 			if i+1 < len(args) {
 				gf.Fields = args[i+1]

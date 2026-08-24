@@ -43,6 +43,52 @@ func TestApplyGlobalCommandFlagsSetsLaunchHeadlessFalse(t *testing.T) {
 		t.Fatalf("expected headless=false, got %v", got)
 	}
 }
+func TestApplyGlobalCommandFlagsAddsCACert(t *testing.T) {
+	command := map[string]interface{}{"action": "launch"}
+	if err := applyGlobalCommandFlags(command, GlobalFlags{CACert: "/tmp/proxy-ca.pem"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := command["caCert"]; got != "/tmp/proxy-ca.pem" {
+		t.Fatalf("expected caCert, got %v", got)
+	}
+}
+
+func TestApplyGlobalCommandFlagsReadsCACertEnvironment(t *testing.T) {
+	t.Setenv("CLOAK_AGENT_CA_CERT", "/tmp/env-ca.pem")
+	command := map[string]interface{}{"action": "launch"}
+	if err := applyGlobalCommandFlags(command, GlobalFlags{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := command["caCert"]; got != "/tmp/env-ca.pem" {
+		t.Fatalf("expected environment caCert, got %v", got)
+	}
+}
+
+func TestApplyGlobalCommandFlagsRejectsUnsafeCACombinations(t *testing.T) {
+	tests := []map[string]interface{}{
+		{"action": "launch", "profile": "named"},
+		{"action": "launch", "ignoreHTTPSErrors": true},
+	}
+	for _, command := range tests {
+		if err := applyGlobalCommandFlags(command, GlobalFlags{CACert: "/tmp/proxy-ca.pem"}); err == nil {
+			t.Fatalf("expected CA conflict for %#v", command)
+		}
+	}
+}
+
+func TestApplyGlobalCommandFlagsClearCAWinsOverEnvironment(t *testing.T) {
+	t.Setenv("CLOAK_AGENT_CA_CERT", "/tmp/env-ca.pem")
+	command := map[string]interface{}{"action": "launch"}
+	if err := applyGlobalCommandFlags(command, GlobalFlags{ClearCACert: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := command["clearCaCert"]; got != true {
+		t.Fatalf("expected clearCaCert=true, got %v", got)
+	}
+	if _, ok := command["caCert"]; ok {
+		t.Fatal("clear flag must suppress environment CA")
+	}
+}
 
 func TestInstallScriptBootstrapsCloakBrowser(t *testing.T) {
 	scriptPath := filepath.Join("..", "scripts", "install.sh")

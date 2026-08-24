@@ -22,9 +22,16 @@ cloak-agent reload                        # Reload page
 cloak-agent close                         # Close browser and stop daemon
 ```
 
-Launch accepts agent-friendly runtime flags like `--profile`, `--proxy`, `--timezone`, `--locale`, `--viewport`, `--geoip`, `--humanize`, `--human-preset`, `--human-config`, `--fingerprint-seed`, `--platform`, `--gpu-vendor`, `--gpu-renderer`, `--user-agent`, `--executable-path`, `--storage-state`, `--ignore-https-errors`, `--context-options`, and repeatable `--arg`.
+Launch accepts agent-friendly runtime flags like `--profile`, `--proxy`, `--timezone`, `--locale`, `--viewport`, `--geoip`, `--humanize`, `--human-preset`, `--human-config`, `--fingerprint-seed`, `--platform`, `--gpu-vendor`, `--gpu-renderer`, `--user-agent`, `--executable-path`, `--storage-state`, `--ignore-https-errors`, `--ca-cert`, `--no-ca-cert`, `--context-options`, and repeatable `--arg`.
 
 Global `--tailgate` selects the private `default` SSH route. `--tailgate-route <name>` selects a named route. Use `tailgate status`, `tailgate doctor`, and `tailgate stop` with the same `--session`. See [tailgate.md](tailgate.md).
+On Linux, `--ca-cert <path>` imports a DER certificate or PEM bundle into a
+private NSS database for the launched browser. It requires `certutil` from
+`libnss3-tools` (Debian/Ubuntu) or `nss-tools` (RPM). Hostname, validity, and
+unrelated-authority checks stay enabled. Do not combine it with `--profile` or
+`--ignore-https-errors`. `CLOAK_AGENT_CA_CERT` supplies the path by environment;
+`--no-ca-cert` or `CLOAK_AGENT_CLEAR_CA_CERT=1` explicitly starts without it.
+
 
 Create a route without editing JSON:
 

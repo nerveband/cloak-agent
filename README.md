@@ -235,8 +235,12 @@ cloak-agent launch https://example.com \
   --human-preset careful \
   --context-options '{"permissions":["geolocation"]}' \
   --fingerprint-seed 42 \
-  --ignore-https-errors \
   --arg --disable-gpu
+
+# Linux-only private proxy CA trust; requires certutil from libnss3-tools/nss-tools.
+cloak-agent launch https://internal.example --proxy http://proxy:8080 \
+  --ca-cert /etc/ssl/certs/proxy-ca.pem
+cloak-agent launch https://example.com --no-ca-cert
 
 cloak-agent daemon start
 cloak-agent daemon status
@@ -244,6 +248,14 @@ cloak-agent daemon logs
 cloak-agent daemon restart
 cloak-agent daemon stop
 ```
+`--ca-cert` accepts a DER certificate or PEM bundle and imports it into a
+private, temporary NSS database used only by that browser session. Normal
+hostname, expiry, and unrelated-authority checks remain enabled. It cannot be
+combined with `--profile` or `--ignore-https-errors`. The equivalent
+`CLOAK_AGENT_CA_CERT` and `CLOAK_AGENT_CLEAR_CA_CERT=1` environment variables
+are supported. Install `libnss3-tools` on Debian/Ubuntu or `nss-tools` on RPM
+Linux before using it.
+
 
 ### Updates
 
@@ -380,6 +392,8 @@ The daemon validates all input from agents:
 | `--limit <n>` | Limit collection output |
 | `--id-only` | Return only identifiers where possible |
 | `--count` | Return counts for collections where possible |
+| `--ca-cert <path>` | Trust a private CA for a Linux browser launch |
+| `--no-ca-cert` | Start the new launch without retained private CA trust |
 
 ### Structured errors and exit codes
 

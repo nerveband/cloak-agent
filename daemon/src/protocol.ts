@@ -73,6 +73,8 @@ const launch = z.object({
   storageState: z.string().optional(),
   ignoreHTTPSErrors: z.boolean().optional(),
   contextOptions: looseRecord.optional(),
+  caCert: z.string().min(1).optional(),
+  clearCaCert: z.boolean().optional(),
 });
 
 const navigate = z.object({
