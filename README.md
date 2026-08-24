@@ -79,7 +79,7 @@ profiles and config roots removed as well.
 
 Current runtime baseline (locked in `daemon/package-lock.json`):
 
-- `cloakbrowser` `0.5.3` for the patched Chromium runtime and stable/preview release channels.
+- `cloakbrowser` `0.5.8` for the patched Chromium runtime and stable/preview release channels.
 - `playwright-core` `1.62.1` for browser control.
 - `ws` `8.21.2` for the optional CDP-backed local viewport stream server.
 

@@ -6,6 +6,12 @@ Primary comparison points:
 - agent-browser 0.34.0 release commit `548b159`
 - prior cloak-agent parity baseline: agent-browser 0.33.2
 
+## CloakBrowser lock
+
+- npm wrapper: `cloakbrowser` 0.5.8.
+- verified free Linux x64 runtime: Chromium 146.0.7680.177.5.
+- `playwright-core` 1.62.1 and `ws` 8.21.2 remain locked.
+
 ## Imported
 
 agent-browser 0.35.0 adds private proxy CA trust for locally launched Chromium

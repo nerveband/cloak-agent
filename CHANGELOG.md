@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2 — 2026-08-24
+
+- Update the locked CloakBrowser wrapper from 0.5.3 to 0.5.8. The latest free
+  Linux runtime remains Chromium 146.0.7680.177.5.
+
 ## 0.4.1 — 2026-08-24
 
 - Make the Unix installer consume prebuilt release archives directly instead

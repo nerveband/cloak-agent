@@ -56,7 +56,7 @@ The daemon starts it on `127.0.0.1` with an OS-assigned port and writes that por
 
 The daemon intentionally keeps browser-facing dependencies explicit in `daemon/package.json`:
 
-- `cloakbrowser` `0.5.3` supplies the patched Chromium runtime, install CLI, and stable/preview binary channels.
+- `cloakbrowser` `0.5.8` supplies the patched Chromium runtime, install CLI, and stable/preview binary channels.
 - `playwright-core` `1.62.1` is the automation API used by the daemon.
 - `ws` `8.21.2` powers the optional CDP-backed local stream server.
 

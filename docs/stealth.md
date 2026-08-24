@@ -2,7 +2,7 @@
 
 cloak-agent uses [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a Chromium build with fingerprint patches applied at the C++ source level. This is different from tools like puppeteer-stealth or playwright-stealth that inject JavaScript — those patches can be detected by examining the page's JavaScript environment. CloakBrowser's patches are compiled into the browser binary itself.
 
-The current daemon baseline is `cloakbrowser` `0.5.3`, with the compatible free
+The current daemon baseline is `cloakbrowser` `0.5.8`, with the compatible free
 Linux runtime locked by the daemon lockfile. It supports explicit stable/preview
 release channels, exact browser version pins, extensions, authenticated proxy
 fixes, and the current Chromium line. After upgrading that package, rebuild the
