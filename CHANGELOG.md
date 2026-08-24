@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 — 2026-08-24
+
+- Make the Unix installer consume prebuilt release archives directly instead
+  of requiring the source-only `scripts/build.sh`.
+
 ## 0.4.0 — 2026-08-24
 
 - Add Linux private proxy CA trust through `--ca-cert`, isolated temporary NSS

@@ -130,3 +130,15 @@ func TestInstallScriptUsesLockedProductionDependencies(t *testing.T) {
 		t.Fatalf("expected %s to install the locked production dependency set", scriptPath)
 	}
 }
+func TestInstallScriptAcceptsPackagedBinaryAndDaemon(t *testing.T) {
+	scriptPath := filepath.Join("..", "scripts", "install.sh")
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `-x "$PROJECT_DIR/cloak-agent"`) ||
+		!strings.Contains(text, `-f "$PROJECT_DIR/daemon/dist/daemon.js"`) {
+		t.Fatalf("expected %s to recognize a complete release archive", scriptPath)
+	}
+}

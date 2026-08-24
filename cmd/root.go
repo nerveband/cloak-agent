@@ -15,7 +15,7 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.4.0"
+var Version = "0.4.1"
 
 func Execute(args []string) error {
 	if len(args) == 0 {

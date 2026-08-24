@@ -18,9 +18,15 @@ require_command node "Install Node.js 20+ to bootstrap cloak-agent."
 require_command npm "Install npm to bootstrap cloak-agent."
 require_command npx "Install npm to run cloakbrowser install."
 
-echo "Building cloak-agent..."
-"$SCRIPT_DIR/build.sh"
-
+if [ -x "$PROJECT_DIR/cloak-agent" ] && [ -f "$PROJECT_DIR/daemon/dist/daemon.js" ]; then
+    echo "Using packaged cloak-agent binary and daemon."
+elif [ -x "$SCRIPT_DIR/build.sh" ]; then
+    echo "Building cloak-agent..."
+    "$SCRIPT_DIR/build.sh"
+else
+    echo "Error: release archive is incomplete: expected cloak-agent and daemon/dist/daemon.js." >&2
+    exit 1
+fi
 echo ""
 echo "Installing to $INSTALL_DIR..."
 
