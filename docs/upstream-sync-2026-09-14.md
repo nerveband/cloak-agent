@@ -1,101 +1,75 @@
-# Upstream and agent-browser parity — 2026-09-14
+# Upstream comparison and review corrections: 2026-09-14
 
-Primary comparison points:
+Comparison baseline: agent-browser v0.37.1 and CloakBrowser wrapper v0.5.10.
+The previous cloak-agent baseline was agent-browser v0.35.0 and wrapper v0.5.8.
+This is a comparison of releases, not a claim that every change on upstream main
+was ported or that both CLIs expose identical APIs.
 
-- agent-browser `v0.37.1` (release commit `ba8f048`; prior cloak-agent parity baseline: `0.35.0` at `8ec2bb0`)
-- agent-browser `v0.37.0` (`471ab38`), `v0.36.0` (`eb05921`), `v0.35.2` (`118af8e`), `v0.35.1` (`fbd046c`)
-- CloakBrowser `v0.5.10` (locked wrapper; prior lock: `0.5.8`)
+## Wrapper and browser versions
 
-## CloakBrowser lock
+- Locked wrapper: CloakBrowser 0.5.10. Playwright Core 1.62.1 and ws 8.21.2 remain pinned.
+- Keyless Linux x64: Chromium 146.0.7680.177.5. Keyless macOS: 145.0.7632.109.2.
+- At review, upstream advertised licensed stable 151.0.7922.108.6 on Linux/Windows
+  and 151.0.7922.108.3 on macOS. These are platform-dependent runtime versions,
+  not the npm package version.
+- The latest runtime is also available with a free GitHub-sign-in key limited to
+  one concurrent session. A key is not necessarily a paid subscription.
+- Invalid/unreachable license validation and failed requested geoip resolution now
+  fail launch. Humanized selector/actionability fixes come from the pinned wrapper.
 
-- npm wrapper: `cloakbrowser` `0.5.10` (`js/src/config.ts` still ships
-  `CHROMIUM_VERSION = 146.0.7680.177.5` for the keyless free tier).
-- verified keyless Linux x64 runtime: Chromium `146.0.7680.177.5` (unchanged).
-- Pro Stable runtime for a licensed key: Chromium `151.0.7922.108.3`.
-- `playwright-core` `1.62.1` and `ws` `8.21.2` remain locked.
+Source: [CloakBrowser README](https://github.com/CloakHQ/cloakbrowser#cloakbrowser-pro).
 
-Wrapper behavior that reaches cloak-agent:
+## WebMCP correction
 
-- 0.5.10 aborts a launch when a supplied license key is invalid or cannot be
-  validated (`js/src/download.ts`) instead of silently using the free binary.
-  cloak-agent surfaces the wrapper error unchanged; keyless launches are
-  unaffected because no key is present.
-- `geoip` resolution failures now abort the launch (`fix(geoip)`), and
-  `info` reports session seats as `active/limit` with a real denial reason.
-- Humanized selector resolution (`get_by_*`, Shadow DOM ordering, actionability,
-  `display: contents`) is fixed inside the wrapper, which cloak-agent already
-  uses through `humanize`/`humanPreset` launch options.
+The original claim that keyless Chromium 146 could not support WebMCP was incorrect.
+The original CLI probe used an argument form that was silently ignored and did not
+establish secure-context support. CloakBrowser's argument builder preserves user
+feature overrides; it does not categorically remove the WebMCP flags.
 
-## Imported
+A secure-origin probe on keyless Chromium 146 successfully registered, listed, and
+executed a tool through `navigator.modelContextTesting`. The remediation adds opt-in
+`launch --webmcp`, frame-scoped `webmcp list` and `webmcp call`, bounded inputs,
+outputs, and timeouts, and explicit unsupported errors. It does not implement
+agent-browser's separate detached invocation/history interface or claim CDP-domain
+compatibility on every browser build. Runtime capability detection is authoritative.
 
-**Recording rewrite (0.37.0).** agent-browser replaced `Page.captureScreenshot`
-polling with `Page.startScreencast`, a 30 fps default, `--fps 1-60`, current-page
-capture, ffmpeg preflight, extension validation, and wall-clock frame timing.
-cloak-agent's `record` commands were stubs, so this landed as
-`daemon/src/recording.ts` with the same contract in the CloakBrowser/Playwright
-architecture: its own CDP session, a ticker that holds the last frame through
-gaps (bounded backfill), libvpx for `.webm` / libx264 otherwise, fail-fast
-validation ahead of browser state, `No frames captured` for an empty take, and a
-`restart` that keeps the previous take. `doctor` now reports ffmpeg.
+## Ported behavior and corrections
 
-**Session setup inheritance for new tabs (0.37.0).** Tabs opened with `tab new`
-or through clicks inherit headers, credentials, user agent, locale, timezone,
-geolocation, offline mode, routes, color scheme, and init scripts before their
-first navigation. In cloak-agent most of that is context-level and was already
-inherited; page-level media emulation was the gap. `set media`/color scheme now
-records the state on the manager and replays it on every new page, awaited before
-`tab new <url>` navigates.
+- Recording uses its own CDP screencast and ffmpeg. The remediation fixes exact-rate
+  monotonic timing, signal/exit/stdin failures, bounded cleanup, output staging,
+  final-file byte counts, and preflight before replacing a running take.
+  Excessive backlog fails explicitly rather than silently distorting duration.
+- Ref state belongs to a page and snapshot generation. Navigation, activation, and
+  close invalidate it; a snapshot completing after the page changes is rejected.
+- Media updates merge committed state. Explicit tabs await setup before navigation.
+  Popups receive asynchronous replay; their first script is not guaranteed to see
+  dynamic overrides. Subsequent CLI actions wait for replay and surface failures.
+- The stream tracks full-document, history, and fragment URLs. Capture and input are
+  pinned to the same page until reconnection, even if the CLI switches tabs.
+- Native-only stream clients must omit Origin. Opaque `null`, file, and HTTP origins
+  are rejected. Host remains loopback-only; messages have a 256 KiB limit and typed
+  input validation.
 
-**Stale-ref invalidation (0.35.1).** agent-browser resets ref numbering across
-snapshots and invalidates refs across URL navigation. cloak-agent now clears the
-ref map, cached tree, and frame scope when the active page's main frame
-navigates, so a post-navigation click reports `Unknown ref` instead of acting on
-a re-resolved role/name match. A failed snapshot still preserves the previous
-refs because the map is only replaced on success.
+## Release review corrections
 
-**Stream URL tracking (0.35.1).** The viewport stream now reports the streamed
-page's main-frame URL: an initial `url` message, one per full-document, History
-API, or fragment navigation (deduplicated), and `metadata.url` on frames. The
-implementation enables the CDP `Page` domain on the stream session, which raw
-Playwright CDP sessions do not enable by default.
+The v0.5.0 release was published while CI was failing. New recording tests lacked
+ffmpeg in CI; macOS/Windows also had pre-existing Linux-only CA-test failures.
+Those are now addressed in workflow/test changes. Publication is tag-driven and
+requires successful platform, browser-integration, and archive jobs.
 
-**Stream hardening (0.35.2).** agent-browser hardened dashboard provenance
-against DNS rebinding, smuggling, and cross-origin access. cloak-agent has no
-dashboard and no reverse-proxy mode, so the applicable part is the local
-WebSocket surface: the handshake now requires a loopback `Host` header (with the
-bound port when present) alongside the existing origin rejection, inbound
-payloads are capped at 256 KB, and client input is schema-validated so NaN
-coordinates, unknown actions, and oversized keys never reach CDP.
+The original updater only replaced the executable. The remediation installs a
+verified complete bundle into an immutable release directory and atomically selects
+it through `current.json`; a stable launcher binds CLI and daemon to the same release.
+Existing incompatible daemons are not automatically terminated. The first migration
+from the old updater requires a complete release archive.
 
-## Not applicable
+The SSH ownership diagnosis was also overstated: the agent namespace maps only UID
+1000, so unmapped root IDs appear as nobody. Use the private SSH configuration with
+`ssh -F` inside that namespace. Do not change host ownership based on that view.
 
-- **WebMCP (0.36.0, output in 0.37.0).** The API (`navigator.modelContext`) is
-  absent from the locked keyless runtime: probe on Chromium `146.0.7680.177.5`
-  returned `undefined` for `modelContext`, `tools`, and `getTools`, and
-  agent-browser enables the feature with `--enable-features=WebMCPTesting,
-  DevToolsWebMCPSupport`, which CloakBrowser's own argument handling replaces
-  with its stealth feature set. Implementing tool discovery and invocation
-  cannot be verified on any runtime this release supports, so it is deferred
-  until the Pro Chromium 151 line becomes the baseline.
-- **`--pin-tab` / persistent target binding, and the CDP root-URL query fix
-  (0.34.0, 0.35.2).** cloak-agent owns one CloakBrowser context per session and
-  never attaches to a shared external Chrome, so there is no external target to
-  bind or a `--cdp` URL to normalize.
-- **Windows ARM64 launcher selection (0.35.1) and the private-desktop headless
-  Chrome isolation (0.37.1).** Windows binaries are cross-built and inspected,
-  not run natively, and CloakBrowser's launcher owns process/desktop setup.
-- **Dashboard token/IPv4-IPv6 provenance work, MCP tool profiles, the WebMCP
-  generation skill, eve integration updates, and the Lightpanda serve-timeout
-  removal.** These belong to agent-browser's provider, MCP, and hosted layers,
-  or to engines cloak-agent does not use.
-- **Rust dependency bumps (`rustls-webpki`, `quinn-proto`, `brace-expansion`)
-  and the npm publish approval workflow.** cloak-agent ships Go and Node
-  dependencies and publishes through GoReleaser.
+## Verification boundaries
 
-## Verification boundary
-
-Linux x64 is the native runtime baseline: `npm test` in `daemon/` (including the
-browser integration file) and `go test ./cmd/...` run natively here, and the
-recording path was exercised end to end through the CLI with `ffprobe`
-confirmation of container, duration, and frame count. Darwin and Windows
-archives are cross-built and inspected; they are not native runtime tests.
+Regression tests cover recorder failures, timing, refs, media merging, stream origin
+rejection/input targeting, WebMCP execution, and installation rollback/archive safety.
+Native smoke evidence and platform limitations must be reported with each release.
+Cross-build success does not establish native macOS or Windows browser behavior.

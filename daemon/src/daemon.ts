@@ -265,7 +265,7 @@ export async function startDaemon(options?: DaemonOptions): Promise<void> {
         const command = success.command;
 
         // Auto-launch browser if needed
-        if (!browserManager.isLaunched() && !NO_BROWSER_ACTIONS.has(command.action)) {
+        if (!command.dryRun && !browserManager.isLaunched() && !NO_BROWSER_ACTIONS.has(command.action)) {
           try {
             const launchOpts = buildAutoLaunchOptions();
             await executeCommand(browserManager, {
@@ -289,7 +289,7 @@ export async function startDaemon(options?: DaemonOptions): Promise<void> {
           const resp = serializeResponse(result);
 
           // For close action: send response, then shut down
-          if (command.action === 'close') {
+          if (command.action === 'close' && !command.dryRun) {
             socket.write(resp + '\n', () => {
               gracefulShutdown(server, browserManager, streamServer, session);
             });
@@ -365,7 +365,9 @@ async function gracefulShutdown(
   shutdownInProgress = true;
 
   try {
-    streamServer.stop();
+    try { await streamServer.stop(); } catch (error) {
+      console.error('[cloak-agent] stream shutdown failed:', error);
+    }
 
     // Close browser if running
     if (browserManager.isLaunched()) {

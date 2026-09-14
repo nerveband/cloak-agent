@@ -26,6 +26,17 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: daemon/package-lock.json
+      - name: Install ffmpeg on Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install ffmpeg on macOS
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install ffmpeg on Windows
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --no-progress -y
+      - name: Verify recording prerequisites
+        run: ffmpeg -version
       - name: Install daemon dependencies
         run: npm ci
         working-directory: daemon
@@ -33,7 +44,7 @@ jobs:
         run: npm run build
         working-directory: daemon
       - name: Test daemon without browser integration
-        run: npm test -- --exclude tests/integration.test.ts
+        run: npm test -- --exclude tests/integration.test.ts --exclude tests/session-safety.test.ts
         working-directory: daemon
       - name: Test Go CLI
         run: go test ./cmd/...
@@ -50,11 +61,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: daemon/package-lock.json
+      - name: Install recording dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install daemon dependencies
         run: npm ci
         working-directory: daemon
       - name: Run native Linux browser integration
-        run: npm test -- tests/integration.test.ts
+        run: npm test -- tests/integration.test.ts tests/session-safety.test.ts
         working-directory: daemon
 
   release-snapshot:
@@ -93,3 +106,30 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+
+  release:
+    name: Publish verified tag
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [platform-unit, linux-browser-integration, release-snapshot]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require matching tag and daemon version
+        run: test "${GITHUB_REF_NAME#v}" = "$(node -p "require('./daemon/package.json').version")"
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

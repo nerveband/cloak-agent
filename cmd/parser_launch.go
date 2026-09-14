@@ -121,13 +121,21 @@ func parseLaunchArgs(rest []string) (map[string]interface{}, error) {
 				addViewport(m, rest[i+1])
 				i++
 			}
+		case "--webmcp":
+			m["webmcp"] = true
+		case "--no-webmcp":
+			m["webmcp"] = false
 		case "--arg":
 			if i+1 < len(rest) {
 				addLaunchArg(m, rest[i+1])
 				i++
 			}
 		default:
-			if !strings.HasPrefix(rest[i], "--") {
+			if strings.HasPrefix(rest[i], "--arg=") {
+				addLaunchArg(m, strings.TrimPrefix(rest[i], "--arg="))
+			} else if strings.HasPrefix(rest[i], "--") {
+				return nil, fmt.Errorf("unknown launch option: %s", rest[i])
+			} else {
 				m["url"] = rest[i]
 			}
 		}

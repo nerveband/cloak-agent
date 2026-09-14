@@ -7,6 +7,7 @@ export function buildLaunchOptions(command: LaunchCommand): BrowserLaunchOptions
   const options: BrowserLaunchOptions = {};
 
   if (command.headless !== undefined) options.headless = command.headless;
+  if (command.webmcp !== undefined) options.webmcp = command.webmcp;
   if (command.geoip !== undefined) options.geoip = command.geoip;
   if (command.browserVersion) options.browserVersion = command.browserVersion;
   if (command.releaseChannel) options.releaseChannel = command.releaseChannel;

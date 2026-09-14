@@ -75,6 +75,7 @@ const launch = z.object({
   contextOptions: looseRecord.optional(),
   caCert: z.string().min(1).optional(),
   clearCaCert: z.boolean().optional(),
+  webmcp: z.boolean().optional(),
 });
 
 const navigate = z.object({
@@ -163,6 +164,9 @@ const cdp = z.object({
   method: z.string().regex(/^[A-Za-z]+(?:\.[A-Za-z0-9_]+)+$/),
   params: looseRecord.optional(),
 });
+
+const webmcp_list = z.object({ ...base, action: z.literal('webmcp_list'), frame: z.string().optional(), timeout: z.number().int().min(1).max(60000).optional() });
+const webmcp_call = z.object({ ...base, action: z.literal('webmcp_call'), name: z.string().min(1).max(256), arguments: looseRecord.optional(), frame: z.string().optional(), timeout: z.number().int().min(1).max(60000).optional() });
 
 // --- Wait ---
 const wait = z.object({ ...base, action: z.literal('wait'), timeout: z.number().optional(), selector: z.string().optional(), state: z.enum(['attached', 'detached', 'visible', 'hidden']).optional() });
@@ -303,6 +307,7 @@ const allSchemas = [
   mousemove, mousedown, mouseup, wheel,
   // Schema introspection / runtime diagnostics
   schema, runtime_status,
+  webmcp_list, webmcp_call,
   // Cloak-Agent exclusive
   stealth_status, fingerprint_rotate, profile_create, profile_list,
 ] as const;
@@ -473,7 +478,7 @@ function safetyMetadata(action: string): Record<string, boolean | string> {
     'unroute', 'viewport', 'device', 'geolocation', 'headers', 'credentials',
     'offline', 'emulatemedia', 'state_load', 'highlight', 'trace_start',
     'trace_stop', 'recording_start', 'recording_restart', 'recording_stop', 'fingerprint_rotate',
-    'profile_create', 'cdp',
+    'profile_create', 'cdp', 'webmcp_call',
   ]);
   const destructive = new Set(['close', 'tab_close', 'cookies_clear', 'storage_clear', 'unroute', 'fingerprint_rotate']);
   const idempotent = new Set(['profile_create', 'profile_list', 'schema', 'url', 'title', 'snapshot', 'requests', 'console', 'errors']);

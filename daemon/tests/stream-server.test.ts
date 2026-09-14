@@ -1,5 +1,5 @@
 import { EventEmitter, once } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 
 import type { BrowserManager } from '../src/browser.js';
@@ -83,7 +83,7 @@ describe('StreamServer', () => {
     const server = new StreamServer(fake.browser, 0);
 
     const port = await server.start();
-    server.stop();
+    await server.stop();
 
     expect(port).toBeGreaterThan(0);
     expect(server.getPort()).toBe(port);
@@ -166,8 +166,12 @@ describe('StreamServer', () => {
 
     expect(await handshake()).toBe('open');
     expect(await handshake({ Host: 'rebind.attacker.test' })).toBe('rejected');
+    expect(await handshake({ Origin: 'null' })).toBe('rejected');
+    expect(await handshake({ Origin: 'https://attacker.invalid' })).toBe('rejected');
+    expect(await handshake({ Origin: 'file://' })).toBe('rejected');
+    expect(await handshake({ Origin: '' })).toBe('rejected');
 
-    server.stop();
+    await server.stop();
   });
 
   it('forwards client input messages to the browser manager', async () => {
@@ -205,7 +209,7 @@ describe('StreamServer', () => {
     socket.emit('close');
     await Promise.resolve();
 
-    expect(fake.calls.map((call) => call.method)).toEqual(['startScreencast', 'stopScreencast']);
+    await vi.waitFor(() => expect(fake.calls.map((call) => call.method)).toEqual(['startScreencast', 'stopScreencast']));
   });
 });
 

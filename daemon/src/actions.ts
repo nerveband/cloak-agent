@@ -14,11 +14,14 @@ import { toAIFriendlyError, validateFilePath } from './errors.js';
 import { listProfiles, ensureProfileDir } from './stealth.js';
 import { getSnapshotStats, parseRef } from './snapshot.js';
 import { buildLaunchOptions } from './launch-options.js';
+import { runWebMCP } from './webmcp.js';
 import {
   executeSemanticLocatorSubaction,
   semanticActionLabel,
   semanticSubactionNeedsValue,
 } from './semantic-actions.js';
+
+const daemonVersion = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8')).version as string;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -77,7 +80,13 @@ export async function executeCommand(
   const { id } = command;
 
   try {
+    if (browser.isLaunched() && !command.dryRun && command.action !== 'close') await browser.waitForPageSetup();
     switch (command.action) {
+      case 'webmcp_list':
+      case 'webmcp_call': {
+        if (command.dryRun) return dryRun(id, command.action === 'webmcp_list' ? 'List WebMCP tools' : `Call WebMCP tool ${command.name}`);
+        return successResponse(id, await runWebMCP(browser.getPage(), browser.getFrame(), command));
+      }
       // =====================================================================
       // Navigation
       // =====================================================================
@@ -1285,7 +1294,7 @@ export async function executeCommand(
 
       case 'runtime_status': {
         if (command.dryRun) return dryRun(id, 'Inspect daemon browser runtime status');
-        return successResponse(id, await browser.getRuntimeStatus());
+        return successResponse(id, { ...await browser.getRuntimeStatus(), version: daemonVersion });
       }
 
       // =====================================================================

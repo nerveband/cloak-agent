@@ -17,6 +17,7 @@ import {
 
 export interface BrowserLaunchOptions extends StealthOptions {
   headless?: boolean;
+  webmcp?: boolean;
   profile?: string;
   viewport?: { width: number; height: number };
   userAgent?: string;
@@ -98,6 +99,8 @@ export class BrowserManager {
   private activeFrame: Frame | null = null;
   private refMap: Record<string, RefData> = {};
   private lastSnapshot: string = '';
+  private snapshotPage: Page | null = null;
+  private snapshotGeneration = 0;
   private consoleMessages: Array<{ type: string; text: string }> = [];
   private pageErrors: string[] = [];
   private trackedRequests: TrackedRequest[] = [];
@@ -107,6 +110,7 @@ export class BrowserManager {
   private dialogHandler: ((dialog: any) => void) | null = null;
   private lastLaunchOptions: BrowserLaunchOptions | null = null;
   private screencastSession: CDPSession | null = null;
+  private screencastPage: Page | null = null;
   private profilerSession: CDPSession | null = null;
   private pendingDialog: Dialog | null = null;
   private tabIds = new Map<Page, string>();
@@ -114,6 +118,7 @@ export class BrowserManager {
   private nextTabId = 1;
   private preparedCATrust: PreparedCATrust | null = null;
   private recording = new RecordingManager();
+  private pageSetup = new WeakMap<Page, Promise<void>>();
   private mediaEmulation: MediaEmulationState | null = null;
   private streamUrl: string | null = null;
 
@@ -124,6 +129,7 @@ export class BrowserManager {
   }
 
   resolveRef(ref: string): RefData | null {
+    if (!this.snapshotPage || this.snapshotPage.isClosed() || this.snapshotPage !== this.pages[this.activePageIndex]) return null;
     return this.refMap[ref] ?? null;
   }
 
@@ -155,6 +161,14 @@ export class BrowserManager {
     try {
       preparedCATrust = options.caCert ? await prepareCATrust(options.caCert) : null;
       const args = buildStealthArgs(options);
+      if (options.webmcp) {
+        const index = args.findIndex(arg => arg.startsWith('--enable-features='));
+        const features = new Set(index < 0 ? [] : args[index].slice('--enable-features='.length).split(','));
+        features.add('WebMCPTesting');
+        features.add('DevToolsWebMCPSupport');
+        const flag = `--enable-features=${[...features].join(',')}`;
+        if (index < 0) args.push(flag); else args[index] = flag;
+      }
       const viewport = options.viewport ?? { width: 1920, height: 947 };
       const contextOptions: BrowserContextOptions = {
         ...(options.contextOptions ?? {}),
@@ -268,17 +282,13 @@ export class BrowserManager {
     page.on('framenavigated', (frame) => {
       if (page === this.pages[this.activePageIndex] && frame === page.mainFrame()) {
         this.invalidateSnapshotState();
-        this.streamUrl = page.url();
       }
     });
   }
 
   /**
-   * Page-level state the session expects on every tab. Context-level settings
-   * (headers, credentials, locale, timezone, user agent, geolocation, offline,
-   * routes) are inherited by new pages through the shared BrowserContext;
-   * media emulation is per page, so it is replayed on each new page before its
-   * first navigation.
+   * Replay committed session media state on newly registered pages.
+   * Explicit tabs await this before navigation; popup replay precedes subsequent CLI actions, not their first script.
    */
   async applyStoredPageState(page: Page): Promise<void> {
     if (!this.mediaEmulation) {
@@ -291,25 +301,28 @@ export class BrowserManager {
     if (this.mediaEmulation.colorScheme !== undefined) {
       opts.colorScheme = this.mediaEmulation.colorScheme;
     }
-    await page.emulateMedia(opts).catch(() => {});
+    await page.emulateMedia(opts);
   }
 
   /** Record page-level emulation and apply it to the active page. */
   async setMediaEmulation(state: MediaEmulationState): Promise<void> {
-    this.mediaEmulation = state;
+    const next = { ...this.mediaEmulation, ...state };
     const page = this.getPage();
     const opts: Record<string, unknown> = {};
-    if (state.media !== undefined) {
-      opts.media = state.media;
+    if (next.media !== undefined) {
+      opts.media = next.media;
     }
-    if (state.colorScheme !== undefined) {
-      opts.colorScheme = state.colorScheme;
+    if (next.colorScheme !== undefined) {
+      opts.colorScheme = next.colorScheme;
     }
     await page.emulateMedia(opts);
+    this.mediaEmulation = next;
   }
 
   /** Drop refs and frame scope after a navigation. */
   invalidateSnapshotState(): void {
+    this.snapshotGeneration++;
+    this.snapshotPage = null;
     this.refMap = {};
     this.lastSnapshot = '';
     this.activeFrame = null;
@@ -320,9 +333,14 @@ export class BrowserManager {
     this.pages.push(page);
     this.tabIds.set(page, `t${this.nextTabId++}`);
     this.setupPageListeners(page);
-    // Popups cannot be awaited before they navigate, so inheritance is applied
-    // as soon as the page exists.
-    void this.applyStoredPageState(page);
+    const setup = this.applyStoredPageState(page);
+    this.pageSetup.set(page, setup);
+    void setup.catch(error => {
+      this.pageErrors.push(`Page setup failed: ${error instanceof Error ? error.message : error}`);
+    });
+    page.on('close', () => {
+      if (this.snapshotPage === page) this.invalidateSnapshotState();
+    });
   }
 
   // ── Active page / frame ─────────────────────────────────────────────────
@@ -361,7 +379,12 @@ export class BrowserManager {
     options: SnapshotOptions = {},
   ): Promise<{ tree: string; refs: Record<string, RefData> }> {
     const page = this.getPage();
+    const generation = this.snapshotGeneration;
     const result = await getEnhancedSnapshot(page, options);
+    if (page.isClosed() || page !== this.getPage() || generation !== this.snapshotGeneration) {
+      throw new Error('Page changed during snapshot. Run snapshot again.');
+    }
+    this.snapshotPage = page;
     this.refMap = result.refs;
     this.lastSnapshot = result.tree;
     return result;
@@ -397,14 +420,14 @@ export class BrowserManager {
     }
     const page = await context.newPage();
     this.registerPage(page);
+    this.invalidateSnapshotState();
     this.activePageIndex = this.pages.length - 1;
     if (label) {
       this.tabLabels.set(label, page);
     }
 
-    // Inherit the session's page-level setup before the first navigation, the
-    // same contract agent-browser 0.37 gives `tab new` and click-opened tabs.
-    await this.applyStoredPageState(page);
+    // Explicit tabs await setup before navigation.
+    await this.pageSetup.get(page);
 
     if (url) {
       await page.goto(url);
@@ -429,6 +452,7 @@ export class BrowserManager {
     if (index < 0 || index >= this.pages.length) {
       throw new Error(`Tab index ${index} out of range (0-${this.pages.length - 1}).`);
     }
+    this.invalidateSnapshotState();
     this.activePageIndex = index;
     this.activeFrame = null;
     await this.pages[index].bringToFront();
@@ -440,6 +464,7 @@ export class BrowserManager {
       ? this.pages.find((candidate) => this.tabIds.get(candidate) === target)
       : this.tabLabels.get(target);
     if (!page || page.isClosed()) throw new Error(`Unknown tab "${target}". Run 'tab' to list tabs.`);
+    this.invalidateSnapshotState();
     this.activePageIndex = this.pages.indexOf(page);
     this.activeFrame = null;
     await page.bringToFront();
@@ -453,6 +478,8 @@ export class BrowserManager {
     }
 
     const page = this.pages[idx];
+    const activePage = this.pages[this.activePageIndex];
+    this.invalidateSnapshotState();
     await page.close();
     this.pages.splice(idx, 1);
     this.tabIds.delete(page);
@@ -460,13 +487,9 @@ export class BrowserManager {
       if (labelledPage === page) this.tabLabels.delete(label);
     }
 
-    // Adjust activePageIndex
-    if (this.pages.length === 0) {
-      this.activePageIndex = 0;
-    } else if (this.activePageIndex >= this.pages.length) {
-      this.activePageIndex = this.pages.length - 1;
-    }
-    this.activeFrame = null;
+    this.activePageIndex = activePage && activePage !== page
+      ? Math.max(0, this.pages.indexOf(activePage))
+      : Math.min(idx, Math.max(0, this.pages.length - 1));
   }
 
   async closeTabTarget(target: string): Promise<void> {
@@ -516,9 +539,24 @@ export class BrowserManager {
     };
   }
 
+  async waitForPageSetup(): Promise<void> {
+    await this.pageSetup.get(this.getPage());
+  }
+
+  private async cdpDeadline<T>(operation: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([operation, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('CDP operation timed out')), 5000);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+
   async sendCDP(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    const session = await this.createInputSession();
-    return session.send(method as any, params as any);
+    const page = this.getPage();
+    const session = await page.context().newCDPSession(page);
+    try { return await this.cdpDeadline(session.send(method as any, params as any)); }
+    finally { await this.cdpDeadline(session.detach()).catch(() => {}); }
   }
 
   // ── Diagnostics ─────────────────────────────────────────────────────────
@@ -615,59 +653,38 @@ export class BrowserManager {
   // ── CDP streaming / remote input ────────────────────────────────────────
 
   async startScreencast(onFrame: (data: string) => void, onUrl?: (url: string) => void): Promise<void> {
-    if (this.screencastSession) {
-      return;
-    }
-
+    if (this.screencastSession) return;
     const page = this.getPage();
     const session = await page.context().newCDPSession(page);
-
-    // A raw CDP session delivers no Page events until the domain is enabled,
-    // and the navigation events below arrive from the same domain.
-    await session.send('Page.enable');
-
-    session.on('Page.screencastFrame', (params: { data: string; sessionId: number }) => {
-      onFrame(params.data);
-      session.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
-    });
-
-    // Follow the streamed page's main frame so a viewer can label what it is
-    // looking at across full-document, History API, and fragment navigation.
-    let mainFrameId: string | null = null;
-    const publish = (nextUrl: string): void => {
-      this.streamUrl = nextUrl;
-      onUrl?.(nextUrl);
-    };
-    session.on('Page.frameNavigated', (params: { frame?: { id?: string; parentId?: string; url?: string } }) => {
-      const frame = params.frame;
-      if (!frame?.id) {
-        return;
-      }
-      if (!frame.parentId) {
-        mainFrameId = frame.id;
-        publish(frame.url ?? page.url());
-      }
-    });
-    session.on('Page.navigatedWithinDocument', (params: { frameId?: string; url?: string }) => {
-      if (params.frameId && params.frameId === mainFrameId && params.url) {
-        publish(params.url);
-      }
-    });
-
-    await session.send('Page.startScreencast', {
-      format: 'jpeg',
-      quality: 60,
-      maxWidth: page.viewportSize()?.width ?? 1920,
-      maxHeight: page.viewportSize()?.height ?? 947,
-    });
-
-    const tree = (await session.send('Page.getFrameTree').catch(() => null)) as
-      | { frameTree?: { frame?: { id?: string } } }
-      | null;
-    mainFrameId = tree?.frameTree?.frame?.id ?? mainFrameId;
-    publish(page.url());
-
-    this.screencastSession = session;
+    try {
+      await this.cdpDeadline(session.send('Page.enable'));
+      let mainFrameId: string | undefined;
+      const publish = (url: string) => { this.streamUrl = url; onUrl?.(url); };
+      session.on('Page.screencastFrame', (params: { data: string; sessionId: number }) => {
+        if (this.screencastSession === session) onFrame(params.data);
+        void session.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
+      });
+      session.on('Page.frameNavigated', (params: { frame: { id: string; parentId?: string; url: string } }) => {
+        if (!params.frame.parentId) { mainFrameId = params.frame.id; publish(params.frame.url); }
+      });
+      session.on('Page.navigatedWithinDocument', (params: { frameId: string; url: string }) => {
+        if (params.frameId === mainFrameId) publish(params.url);
+      });
+      const tree = await this.cdpDeadline(session.send('Page.getFrameTree'));
+      mainFrameId = tree.frameTree.frame.id;
+      this.screencastSession = session;
+      this.screencastPage = page;
+      await this.cdpDeadline(session.send('Page.startScreencast', {
+        format: 'jpeg', quality: 60, maxWidth: page.viewportSize()?.width ?? 1920,
+        maxHeight: page.viewportSize()?.height ?? 947,
+      }));
+      publish(page.url());
+    } catch (error) {
+      this.screencastSession = null;
+      this.screencastPage = null;
+      await this.cdpDeadline(session.detach()).catch(() => {});
+      throw error;
+    }
   }
 
   async stopScreencast(): Promise<void> {
@@ -677,10 +694,12 @@ export class BrowserManager {
     }
 
     this.screencastSession = null;
+    this.screencastPage = null;
+    this.streamUrl = null;
     try {
-      await session.send('Page.stopScreencast');
+      await this.cdpDeadline(session.send('Page.stopScreencast'));
     } finally {
-      await session.detach().catch(() => {});
+      await this.cdpDeadline(session.detach()).catch(() => {});
     }
   }
 
@@ -743,12 +762,15 @@ export class BrowserManager {
   }
 
   private async createInputSession(): Promise<CDPSession> {
-    const page = this.getPage();
-    return page.context().newCDPSession(page);
+    if (!this.screencastSession || !this.screencastPage || this.screencastPage.isClosed()) {
+      throw new Error('No streamed page is available for input');
+    }
+    return this.screencastSession;
   }
 
   private pruneClosedPages(): void {
     const activePage = this.pages[this.activePageIndex];
+    if (activePage?.isClosed()) this.invalidateSnapshotState();
     this.pages = this.pages.filter((page) => !page.isClosed());
     if (activePage && !activePage.isClosed()) {
       this.activePageIndex = this.pages.indexOf(activePage);
@@ -778,7 +800,8 @@ export class BrowserManager {
 
   async close(options: { preserveLaunchOptions?: boolean } = {}): Promise<void> {
     await this.recording.shutdown();
-    await this.stopScreencast();
+    let streamError: unknown;
+    try { await this.stopScreencast(); } catch (error) { streamError = error; }
 
     for (const context of this.contexts) {
       try {
@@ -803,9 +826,7 @@ export class BrowserManager {
     this.contexts = [];
     this.pages = [];
     this.activePageIndex = 0;
-    this.activeFrame = null;
-    this.refMap = {};
-    this.lastSnapshot = '';
+    this.invalidateSnapshotState();
     this.consoleMessages = [];
     this.pageErrors = [];
     this.trackedRequests = [];
@@ -822,5 +843,6 @@ export class BrowserManager {
     if (!options.preserveLaunchOptions) {
       this.lastLaunchOptions = null;
     }
+    if (streamError) throw streamError;
   }
 }

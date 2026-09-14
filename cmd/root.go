@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -15,9 +16,12 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.5.0"
+var Version = "0.5.1"
 
 func Execute(args []string) error {
+	if handled, err := dispatchInstalled(args); handled || err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		printUsage()
 		return nil
@@ -48,16 +52,23 @@ func Execute(args []string) error {
 
 	// Handle install subcommand
 	if args[0] == "install" {
-		return handleInstall()
+		return handleInstall(args[1:])
 	}
 
 	// Handle upgrade subcommand
 	if args[0] == "upgrade" {
-		if _, err := update.Upgrade(Version); err != nil {
-			return err
+		repair := len(args) == 2 && args[1] == "--repair"
+		if len(args) > 1 && !repair {
+			return fmt.Errorf("upgrade accepts only --repair")
 		}
-		fmt.Println("Bootstrapping daemon dependencies and CloakBrowser runtime...")
-		return handleInstall()
+		_, err := update.Upgrade(Version, repair)
+		return err
+	}
+	if args[0] == "rollback" {
+		if len(args) != 1 {
+			return fmt.Errorf("rollback does not accept arguments")
+		}
+		return update.Rollback(GetAppDir())
 	}
 
 	// Handle version subcommand
@@ -107,7 +118,7 @@ func Execute(args []string) error {
 	default:
 		command, err = ParseArgs(remaining)
 		if err != nil {
-			return err
+			return NewCLIError("validation_error", err.Error(), "Run 'cloak-agent --help' for valid arguments.", false, ExitValidation)
 		}
 	}
 
@@ -144,6 +155,21 @@ func Execute(args []string) error {
 	timeout := time.Duration(flags.Timeout) * time.Millisecond
 	if timeout == 0 {
 		timeout = defaultTimeout
+	}
+	if action, _ := command["action"].(string); strings.HasPrefix(action, "webmcp_") {
+		if flags.Timeout > 0 {
+			command["timeout"] = flags.Timeout
+		}
+		if value, ok := command["timeout"].(float64); ok {
+			timeout = time.Duration(value)*time.Millisecond + 2*time.Second
+		}
+		if value, ok := command["timeout"].(int); ok {
+			timeout = time.Duration(value)*time.Millisecond + 2*time.Second
+		}
+		jsonBytes, err = json.Marshal(command)
+		if err != nil {
+			return err
+		}
 	}
 
 	respBytes, err := SendCommand(flags.Session, jsonBytes, timeout)
@@ -322,58 +348,22 @@ func setTemporaryEnv(key string, value string) func() {
 	}
 }
 
-func handleInstall() error {
-	if projectDir := findSourceProjectDir(); projectDir != "" {
-		installScript := filepath.Join(projectDir, "scripts", "install.sh")
-		cmd := exec.Command(installScript)
-		cmd.Dir = projectDir
-		cmd.Env = append(os.Environ(), "CLOAK_AGENT_INSTALL_DIR="+GetAppDir())
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		fmt.Printf("==> source install from %s\n", projectDir)
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("source install failed: %w", err)
+func handleInstall(args []string) error {
+	source := executableDir()
+	if len(args) != 0 {
+		if len(args) != 2 || args[0] != "--from" {
+			return fmt.Errorf("install accepts --from <bundle-directory>")
 		}
-		return nil
+		source = args[1]
+	} else if !fileExists(filepath.Join(source, "daemon", "dist", "daemon.js")) {
+		return fmt.Errorf("install requires a complete release bundle; use install --from <directory>")
 	}
-
-	daemonDir := findInstalledDaemonDir()
-	if daemonDir == "" {
-		return fmt.Errorf("install requires either a cloak-agent source checkout (with scripts/install.sh) or an installed daemon layout under %s", GetAppDir())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	if err := update.InstallBundle(ctx, source, GetAppDir(), Version); err != nil {
+		return err
 	}
-
-	for _, binary := range []struct {
-		name    string
-		message string
-	}{
-		{"node", "node not found in PATH; install Node.js 20+ to run cloak-agent install"},
-		{"npm", "npm not found in PATH; install npm to bootstrap cloak-agent"},
-		{"npx", "npx not found in PATH; install npm to run cloakbrowser install"},
-	} {
-		if _, err := exec.LookPath(binary.name); err != nil {
-			return fmt.Errorf("%s", binary.message)
-		}
-	}
-
-	steps := []struct {
-		name string
-		cmd  *exec.Cmd
-	}{
-		{"npm install --omit=dev", exec.Command("npm", "install", "--omit=dev")},
-		{"cloakbrowser install", exec.Command("npx", "cloakbrowser", "install")},
-	}
-
-	for _, step := range steps {
-		step.cmd.Dir = daemonDir
-		step.cmd.Stdout = os.Stdout
-		step.cmd.Stderr = os.Stderr
-		fmt.Printf("==> %s\n", step.name)
-		if err := step.cmd.Run(); err != nil {
-			return fmt.Errorf("%s failed: %w", step.name, err)
-		}
-	}
-
-	fmt.Printf("cloak-agent install complete (daemon dir: %s).\n", daemonDir)
+	fmt.Printf("Installed complete release %s at %s. Command: %s\n", Version, GetAppDir(), filepath.Join(GetAppDir(), "bin", update.BinaryName()))
 	return nil
 }
 
@@ -508,6 +498,30 @@ func handleDoctor(flags GlobalFlags) error {
 	daemonDir := findInstalledDaemonDir()
 	daemonJS, daemonErr := findDaemonJS()
 	cloakBrowserVersion := ""
+	daemonVersion := ""
+	if daemonErr == nil {
+		daemonDir = filepath.Dir(filepath.Dir(daemonJS))
+		if raw, err := os.ReadFile(filepath.Join(daemonDir, "package.json")); err == nil {
+			var pkg struct {
+				Version string `json:"version"`
+			}
+			if json.Unmarshal(raw, &pkg) == nil {
+				daemonVersion = pkg.Version
+			}
+		}
+	}
+	nodeVersion := ""
+	nodeSupported := false
+	if nodeErr == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		output, err := exec.CommandContext(ctx, nodePath, "--version").Output()
+		cancel()
+		nodeVersion = strings.TrimSpace(string(output))
+		var major int
+		if _, scanErr := fmt.Sscanf(nodeVersion, "v%d.", &major); err == nil && scanErr == nil {
+			nodeSupported = major >= 22
+		}
+	}
 	if daemonDir != "" {
 		if raw, err := os.ReadFile(filepath.Join(daemonDir, "node_modules", "cloakbrowser", "package.json")); err == nil {
 			var pkg struct {
@@ -536,18 +550,22 @@ func handleDoctor(flags GlobalFlags) error {
 		"daemonJS":            daemonJS,
 		"daemonJSError":       "",
 		"node":                nodePath,
+		"nodeVersion":         nodeVersion,
+		"daemonVersion":       daemonVersion,
 		"npm":                 npmPath,
 		"npx":                 npxPath,
 		"cloakBrowserCache":   filepath.Join(os.Getenv("HOME"), ".cloakbrowser"),
 		"cloakBrowserWrapper": cloakBrowserVersion,
 		"ffmpeg":              ffmpegPath,
 		"checks": map[string]bool{
-			"node":       nodeErr == nil,
-			"npm":        npmErr == nil,
-			"npx":        npxErr == nil,
-			"ffmpeg":     ffmpegErr == nil,
-			"daemonDir":  daemonDir != "",
-			"daemonFile": daemonErr == nil,
+			"node":              nodeErr == nil,
+			"nodeSupported":     nodeSupported,
+			"componentVersions": daemonVersion == Version,
+			"npm":               npmErr == nil,
+			"npx":               npxErr == nil,
+			"ffmpeg":            ffmpegErr == nil,
+			"daemonDir":         daemonDir != "",
+			"daemonFile":        daemonErr == nil,
 		},
 		"tailgate": tailgateDoctorData(flags.Session, ""),
 	}
@@ -648,6 +666,10 @@ Recording:
   record stop                    Finalize the recording
   trace start|stop <path>        Playwright trace recording
 
+WebMCP:
+  webmcp list [--frame <selector>] List tools in the active or selected secure frame
+  webmcp call <name> [json]      Invoke a tool (--timeout <ms>, --frame <selector>)
+
 Recording requires ffmpeg on PATH. The file extension selects the container:
 .webm uses libvpx, anything else uses libx264.
 
@@ -672,8 +694,9 @@ Schema (for AI agents):
   schema <command>               Show command parameters
 
 Updates:
-  install                        Bootstrap source checkout or installed daemon deps/browser
-  upgrade                        Upgrade to the latest version
+  install [--from <directory>]   Install a complete executable/daemon bundle
+  upgrade [--repair]              Verify and install the full latest release
+  rollback                       Select the previous managed release
   version                        Print version
 
 Global Flags:
@@ -724,6 +747,8 @@ Launch flags:
   --no-ca-cert                   Clear CA trust for the new launch
   --context-options <json>       Extra Playwright context options JSON object
   --arg <flag>                   Extra Chromium/CloakBrowser arg (repeatable)
+  --webmcp                       Enable experimental WebMCP capability detection
+  --no-webmcp                    Do not add WebMCP feature flags
 
 Made by Ashraf (https://ashrafali.net)`)
 }

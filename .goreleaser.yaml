@@ -7,6 +7,7 @@ before:
     - go mod tidy
     - npm --prefix daemon ci
     - npm --prefix daemon run build
+    - node scripts/release-manifests.mjs "{{ .Version }}"
 
 builds:
   - id: cloak-agent
@@ -40,8 +41,12 @@ archives:
       - src: daemon/dist/*
         dst: daemon/dist
         strip_parent: true
-      - daemon/package.json
-      - daemon/package-lock.json
+      - src: daemon/.release/package.json
+        dst: daemon
+        strip_parent: true
+      - src: daemon/.release/package-lock.json
+        dst: daemon
+        strip_parent: true
       - scripts/install.sh
       - scripts/uninstall.sh
       - scripts/install.ps1

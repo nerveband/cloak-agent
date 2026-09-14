@@ -1,113 +1,17 @@
-#!/bin/bash
-set -e
-
+#!/usr/bin/env bash
+set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+BUNDLE="$(dirname "$SCRIPT_DIR")"
 INSTALL_DIR="${CLOAK_AGENT_INSTALL_DIR:-$HOME/.cloak-agent}"
-BIN_DIR="$INSTALL_DIR/bin"
-BIN_PATH="$BIN_DIR/cloak-agent"
-
-require_command() {
-    if ! command -v "$1" >/dev/null 2>&1; then
-        echo "Error: $1 not found in PATH. $2" >&2
+if [[ ! -x "$BUNDLE/cloak-agent" || ! -f "$BUNDLE/daemon/dist/daemon.js" ]]; then
+    if [[ ! -x "$SCRIPT_DIR/build.sh" ]]; then
+        echo "Incomplete release archive: executable and daemon/dist are required." >&2
         exit 1
     fi
-}
-
-require_command node "Install Node.js 20+ to bootstrap cloak-agent."
-require_command npm "Install npm to bootstrap cloak-agent."
-require_command npx "Install npm to run cloakbrowser install."
-
-if [ -x "$PROJECT_DIR/cloak-agent" ] && [ -f "$PROJECT_DIR/daemon/dist/daemon.js" ]; then
-    echo "Using packaged cloak-agent binary and daemon."
-elif [ -x "$SCRIPT_DIR/build.sh" ]; then
-    echo "Building cloak-agent..."
     "$SCRIPT_DIR/build.sh"
-else
-    echo "Error: release archive is incomplete: expected cloak-agent and daemon/dist/daemon.js." >&2
-    exit 1
 fi
-echo ""
-echo "Installing to $INSTALL_DIR..."
-
-# Build a complete staged layout first. Existing profiles/config/state remain
-# in INSTALL_DIR; only the executable and daemon tree are swapped atomically.
-INSTALL_PARENT="$(dirname "$INSTALL_DIR")"
-mkdir -p "$INSTALL_PARENT"
-STAGE_DIR="$(mktemp -d "$INSTALL_PARENT/.cloak-agent-stage.XXXXXX")"
-ROLLBACK_DIR="$(mktemp -d "$INSTALL_PARENT/.cloak-agent-rollback.XXXXXX")"
-cleanup_stage() {
-    rm -rf "$STAGE_DIR" "$ROLLBACK_DIR"
-}
-rollback_install() {
-    set +e
-    if [ -d "$ROLLBACK_DIR/bin" ]; then
-        rm -rf "$INSTALL_DIR/bin"
-        mkdir -p "$INSTALL_DIR"
-        mv "$ROLLBACK_DIR/bin" "$INSTALL_DIR/bin"
-    fi
-    if [ -d "$ROLLBACK_DIR/daemon" ]; then
-        rm -rf "$INSTALL_DIR/daemon"
-        mkdir -p "$INSTALL_DIR"
-        mv "$ROLLBACK_DIR/daemon" "$INSTALL_DIR/daemon"
-    fi
-    cleanup_stage
-}
-trap 'rollback_install' ERR
-
-mkdir -p "$STAGE_DIR/bin" "$STAGE_DIR/daemon"
-cp "$PROJECT_DIR/cloak-agent" "$STAGE_DIR/bin/cloak-agent"
-cp -r "$PROJECT_DIR/daemon/dist" "$STAGE_DIR/daemon/"
-cp "$PROJECT_DIR/daemon/package.json" "$STAGE_DIR/daemon/"
-cp "$PROJECT_DIR/daemon/package-lock.json" "$STAGE_DIR/daemon/"
-(cd "$STAGE_DIR/daemon" && npm ci --omit=dev --quiet)
-(cd "$STAGE_DIR/daemon" && npx cloakbrowser install)
-
-mkdir -p "$INSTALL_DIR"
-if [ -e "$INSTALL_DIR/bin" ]; then mv "$INSTALL_DIR/bin" "$ROLLBACK_DIR/bin"; fi
-if [ -e "$INSTALL_DIR/daemon" ]; then mv "$INSTALL_DIR/daemon" "$ROLLBACK_DIR/daemon"; fi
-mv "$STAGE_DIR/bin" "$INSTALL_DIR/bin"
-mv "$STAGE_DIR/daemon" "$INSTALL_DIR/daemon"
-chmod 0755 "$BIN_PATH"
-trap - ERR
-cleanup_stage
-
-path_contains() {
-    case ":$PATH:" in
-        *":$1:"*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-link_command() {
-    local target_dir="$1"
-    mkdir -p "$target_dir"
-    ln -sf "$BIN_PATH" "$target_dir/cloak-agent"
-    echo "Linked: $target_dir/cloak-agent"
-}
-
-if path_contains "$BIN_DIR"; then
-    echo "Command available: $BIN_PATH"
-else
-    LINKED=0
-    IFS=':' read -r -a PATH_DIRS <<< "$PATH"
-    for path_dir in "${PATH_DIRS[@]}"; do
-        if [ -n "$path_dir" ] && [ -d "$path_dir" ] && [ -w "$path_dir" ]; then
-            link_command "$path_dir"
-            LINKED=1
-            break
-        fi
-    done
-
-    if [ "$LINKED" -eq 0 ]; then
-        USER_LINK_DIR="${CLOAK_AGENT_LINK_DIR:-$HOME/.local/bin}"
-        link_command "$USER_LINK_DIR"
-        if ! path_contains "$USER_LINK_DIR"; then
-            echo "Add to PATH: export PATH=\"$USER_LINK_DIR:\$PATH\""
-        fi
-    fi
-fi
-
-echo ""
-echo "Installation complete!"
-echo "Run: cloak-agent open https://example.com"
+CLOAK_AGENT_INSTALL_DIR="$INSTALL_DIR" "$BUNDLE/cloak-agent" install --from "$BUNDLE"
+LINK_DIR="${CLOAK_AGENT_LINK_DIR:-$HOME/.local/bin}"
+mkdir -p "$LINK_DIR"
+ln -sfn "$INSTALL_DIR/bin/cloak-agent" "$LINK_DIR/cloak-agent"
+printf 'Command: %s/cloak-agent\nAdd %s to PATH if needed.\n' "$LINK_DIR" "$LINK_DIR"

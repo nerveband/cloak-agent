@@ -1,9 +1,7 @@
 package update
 
 import (
-	"encoding/json"
 	"os"
-	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
@@ -60,44 +58,6 @@ func TestFormatNoticeWithUpdate(t *testing.T) {
 	}
 }
 
-func TestCacheRoundTrip(t *testing.T) {
-	// Use a temp dir for cache
-	tmpDir := t.TempDir()
-	origFunc := cachePath
-	_ = origFunc
-
-	// Write cache manually
-	cache := Cache{
-		LastCheck:      time.Now(),
-		LatestVersion:  "1.2.3",
-		UpdateRequired: true,
-	}
-	data, err := json.MarshalIndent(cache, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(tmpDir, cacheFile)
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Read it back
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var loaded Cache
-	if err := json.Unmarshal(raw, &loaded); err != nil {
-		t.Fatal(err)
-	}
-
-	if loaded.LatestVersion != "1.2.3" {
-		t.Errorf("expected 1.2.3, got %s", loaded.LatestVersion)
-	}
-	if !loaded.UpdateRequired {
-		t.Error("expected UpdateRequired to be true")
-	}
-}
 func TestCacheIsScopedToCurrentVersion(t *testing.T) {
 	now := time.Now()
 	cache := &Cache{
@@ -114,40 +74,8 @@ func TestCacheIsScopedToCurrentVersion(t *testing.T) {
 	}
 }
 
-func TestCheckWritePermissionWritableDir(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpFile := filepath.Join(tmpDir, "cloak-agent")
-	if err := os.WriteFile(tmpFile, []byte("test"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := checkWritePermission(tmpFile); err != nil {
-		t.Errorf("expected no error for writable dir, got: %v", err)
-	}
-}
-
-func TestCheckWritePermissionReadOnlyDir(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows directory writability is controlled by ACLs, not Unix mode bits")
-	}
-
-	tmpDir := t.TempDir()
-	roDir := filepath.Join(tmpDir, "readonly")
-	if err := os.MkdirAll(roDir, 0555); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chmod(roDir, 0755) // cleanup
-
-	exePath := filepath.Join(roDir, "cloak-agent")
-	err := checkWritePermission(exePath)
-	if err == nil {
-		t.Fatal("expected permission error for read-only dir")
-	}
-	if !contains(err.Error(), "no write permission") {
-		t.Errorf("expected 'no write permission' in error, got: %v", err)
-	}
-}
-
 func TestCacheFilePermissions(t *testing.T) {
+	t.Setenv("CLOAK_AGENT_INSTALL_DIR", t.TempDir())
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows file permissions are controlled by ACLs, not Unix mode bits")
 	}

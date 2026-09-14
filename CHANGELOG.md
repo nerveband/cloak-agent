@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.1 (2026-09-14)
+
+- Install and upgrade complete checksum-verified bundles into immutable release
+  directories. Activate a matching executable/daemon pair through one pointer;
+  add equal-version repair and rollback without terminating existing sessions.
+- Bind daemon lookup to the executable rather than the working directory, verify
+  component versions, and reject incompatible active daemons with recovery guidance.
+- Make recording output transactional, handle encoder death and stdin failures,
+  bound teardown, preserve active takes on invalid restart, use exact-rate monotonic
+  timing, and report actual output-file bytes.
+- Invalidate refs across page transitions and merge dynamic media settings.
+  Explicit tabs await setup; popup first-script media inheritance is not guaranteed.
+- Keep stream input pinned to the pictured page, reject all supplied Origins
+  including null/file origins, and serialize stream lifecycle operations.
+- Add opt-in capability-detected WebMCP list/call with frame selection and bounds.
+  Correct the prior claim that WebMCP requires a licensed Chromium 151 runtime.
+- Require Node.js 22+ for cloak-agent. Fix ffmpeg CI prerequisites and platform
+  CA tests, replace the wording-based CLI score with isolated behavioral checks,
+  and gate release publication on CI. Snapshot manifests match the built version.
+- Correct the prior SSH ownership diagnosis: an unmapped agent namespace can show
+  root-owned host files as nobody; that is not evidence of host corruption.
+
+The v0.5.0 entries below describe the original release intent. Recording failure
+handling, timing, popup guarantees, and updater completeness were overstated there
+and are corrected by this remediation.
+
 ## 0.5.0 — 2026-09-14
 
 - Replace the `record` stubs with real video recording. `record start <path>

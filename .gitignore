@@ -6,6 +6,7 @@ cloak-agent
 # Daemon
 daemon/node_modules/
 daemon/dist/
+daemon/.release/
 daemon/*.tsbuildinfo
 
 # OS

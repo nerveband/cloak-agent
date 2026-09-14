@@ -217,11 +217,10 @@ cloak-agent tab 2                      # Switch to tab 2
 cloak-agent tab close                  # Close current tab
 ```
 
-New tabs inherit the session's setup before their first navigation: headers,
-credentials, user agent, locale, timezone, geolocation, offline mode, routes,
-color scheme, and media emulation. Refs are invalidated when the active page
-navigates (full document, History API, or fragment), so re-run `snapshot -i`
-after any navigation before using a ref.
+Context-level settings are inherited by new pages. Dynamic media updates are merged;
+explicit `tab new <url>` waits for replay before navigation. Popup replay completes
+before subsequent CLI actions, but not necessarily before the popup's first script.
+Navigation, tab activation, and close invalidate refs. Take a fresh snapshot afterward.
 
 ## Dialogs
 
@@ -265,8 +264,27 @@ the container: `.webm` uses libvpx, anything else uses libx264; an extensionless
 path is rejected. `--fps` accepts 1-60. Frames are written at the requested rate
 even while the page is static, so the file duration matches the wall-clock take.
 `record stop` reports `path`, `frames`, `capturedFrames`, `fps`, `durationMs`,
-and `bytes`; a take with no captured frames fails instead of leaving an empty
-file. `record restart` finalizes the current take and keeps its file.
+and final file `bytes`. Output is staged beside the destination and replaced only
+after successful finalization. Failed/empty takes preserve existing files.
+Invalid restart paths, rates, codecs, or inaccessible directories leave the current
+take running. The new path must differ from the current path. Encoder failure,
+timeout, and excessive backlog return errors rather than a misleading success.
+
+## WebMCP
+
+```bash
+cloak-agent launch https://example.com --webmcp
+cloak-agent webmcp list --frame main
+cloak-agent webmcp call echo '{"value":"hello"}' --timeout 10000
+cloak-agent webmcp list --frame '#embedded-tools'
+```
+
+`webmcp_list` and `webmcp_call` are also available through JSON input and schema
+introspection. Support is detected in the selected secure frame, not inferred from
+the license or Chromium major version. The default timeout is 10 seconds, maximum
+60 seconds. Input limit: 1 MiB. Output limit: 2 MiB. Discovery limit: 512 tools.
+These are synchronous calls, not agent-browser's detached invocation/history API.
+Timeout requests cancellation, without guaranteeing reversal of tool side effects.
 
 ## Debugging
 
@@ -291,17 +309,25 @@ cloak-agent profile list               # List all profiles
 ## Updates
 
 ```bash
-cloak-agent upgrade                    # Download latest version and refresh runtime
-cloak-agent version                    # Print current version
+cloak-agent upgrade                    # Verify and install a complete release
+cloak-agent upgrade --repair           # Repair an equal release version
+cloak-agent rollback                   # Select the previous managed release
+cloak-agent version                   # Print selected release version
 ./scripts/uninstall.sh                 # Remove binary/daemon, preserve profiles/config
 ./scripts/uninstall.sh --purge         # Explicitly remove install and user state
 ```
 
-Source and archive installs stage the compiled CLI and daemon, bootstrap
-locked production dependencies plus the compatible CloakBrowser runtime, then
-atomically swap the executable/daemon tree. A failed swap rolls back. Update
-checks run in the background (once per 24 hours) and print a notice after your
-command finishes. No startup delay, no interruptions.
+Source/archive installs and upgrades share one Go installation engine. They stage
+the executable, compiled daemon, and locked production dependencies; validate matching
+versions; bootstrap the browser; then atomically replace `current.json`.
+Old release directories and user profiles/config remain untouched. The stable
+bootstrap dispatches to the selected immutable release, independent of the shell cwd.
+An incompatible active daemon is rejected without terminating the session.
+Use a new session or explicitly restart it. Uninstall refuses active daemons.
+
+`upgrade` verifies GitHub release checksums before safe extraction. `--repair`
+reinstalls the same version; it never downgrades to an older upstream release.
+The first upgrade from the pre-0.5.1 binary-only updater must use a complete archive.
 
 ## Schema introspection (for AI agents)
 

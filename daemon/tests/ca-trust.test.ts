@@ -63,7 +63,7 @@ describe('CA trust', () => {
     await expect(loadCertificates(malformed)).rejects.toThrow('DER certificate or PEM certificate bundle');
   });
 
-  it('creates a private isolated NSS home and removes it on cleanup', async () => {
+  it.skipIf(process.platform !== 'linux')('creates a private isolated NSS home and removes it on cleanup', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cloak-ca-test-'));
     cleanupPaths.push(directory);
     const certPath = await createCertificate(directory, 'private');
@@ -84,7 +84,7 @@ describe('CA trust', () => {
     }
   });
 
-  it('reports a missing certutil without retaining the temporary home', async () => {
+  it.skipIf(process.platform !== 'linux')('reports a missing certutil without retaining the temporary home', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'cloak-ca-test-'));
     cleanupPaths.push(directory);
     const certPath = await createCertificate(directory, 'missing-tool');
@@ -95,5 +95,8 @@ describe('CA trust', () => {
     } finally {
       process.env.PATH = previousPath;
     }
+  });
+  it.skipIf(process.platform === 'linux')('rejects unsupported platform CA setup before reading files', async () => {
+    await expect(prepareCATrust('nonexistent.pem')).rejects.toThrow('supported only on Linux');
   });
 });

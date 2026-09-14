@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/creativeprojects/go-selfupdate"
@@ -91,70 +90,70 @@ func cacheIsFreshForVersion(cache *Cache, currentVersion string, now time.Time) 
 		now.Sub(cache.LastCheck) < 24*time.Hour
 }
 
-// Upgrade downloads and installs the latest version.
-// Returns true if an upgrade was performed.
-func Upgrade(currentVersion string) (bool, error) {
-	fmt.Printf("Current version: %s\n", currentVersion)
-	fmt.Println("Checking for updates...")
-
+// Upgrade installs the full platform archive, including the locked daemon tree.
+// repair reinstalls an equal version; an older upstream release is never selected.
+func Upgrade(currentVersion string, repair bool) (bool, error) {
 	if currentVersion == "dev" {
-		fmt.Println("Running dev build — use 'make build' or 'make install' to update.")
-		return false, nil
+		return false, fmt.Errorf("development builds must be installed from their source checkout")
 	}
-
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 	updater, err := newUpdater()
 	if err != nil {
-		return false, fmt.Errorf("failed to create updater: %w", err)
+		return false, err
 	}
-
-	latest, found, err := updater.DetectLatest(context.Background(), selfupdate.NewRepositorySlug(repoOwner, repoName))
+	latest, found, err := updater.DetectLatest(ctx, selfupdate.NewRepositorySlug(repoOwner, repoName))
 	if err != nil {
-		return false, fmt.Errorf("failed to check for updates: %w", err)
+		return false, err
 	}
-
 	if !found {
-		fmt.Println("No releases found")
-		return false, nil
+		return false, fmt.Errorf("no release found")
 	}
-
-	if latest.LessOrEqual(currentVersion) {
+	if latest.LessThan(currentVersion) || (latest.Equal(currentVersion) && !repair) {
 		fmt.Printf("Already up to date (latest: %s)\n", latest.Version())
 		return false, nil
 	}
-
-	fmt.Printf("New version available: %s\n", latest.Version())
-	fmt.Printf("Downloading for %s/%s...\n", runtime.GOOS, runtime.GOARCH)
-
-	exe, err := selfupdate.ExecutablePath()
-	if err != nil {
-		return false, fmt.Errorf("failed to get executable path: %w", err)
+	if filepath.Base(latest.AssetName) != latest.AssetName {
+		return false, fmt.Errorf("invalid release asset name")
 	}
-
-	// Check write permission before downloading
-	if err := checkWritePermission(exe); err != nil {
-		return false, err
-	}
-
-	if err := updater.UpdateTo(context.Background(), latest, exe); err != nil {
-		return false, fmt.Errorf("failed to update: %w", err)
-	}
-
-	// macOS: re-sign the binary after replacement
-	if runtime.GOOS == "darwin" {
-		if signErr := exec.Command("codesign", "-s", "-", "-f", exe).Run(); signErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: codesign failed (non-fatal): %v\n", signErr)
+	for _, address := range []string{latest.AssetURL, latest.ValidationAssetURL} {
+		parsed, err := url.Parse(address)
+		if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" {
+			return false, fmt.Errorf("invalid GitHub release asset URL")
 		}
 	}
-
-	fmt.Printf("Successfully upgraded to %s\n", latest.Version())
-
-	// Clear cache so next check sees new version
-	saveCache(Cache{
-		LastCheck:      time.Now(),
-		LatestVersion:  latest.Version(),
-		UpdateRequired: false,
-	})
-
+	dir, err := os.MkdirTemp("", "cloak-agent-upgrade-")
+	if err != nil {
+		return false, err
+	}
+	defer os.RemoveAll(dir)
+	archive := filepath.Join(dir, latest.AssetName)
+	manifest := filepath.Join(dir, "checksums.txt")
+	if err = download(ctx, latest.ValidationAssetURL, manifest, 1<<20); err != nil {
+		return false, err
+	}
+	if err = download(ctx, latest.AssetURL, archive, maxArchiveBytes); err != nil {
+		return false, err
+	}
+	if err = verifyChecksum(archive, manifest, latest.AssetName); err != nil {
+		return false, err
+	}
+	bundle := filepath.Join(dir, "bundle")
+	if err = os.Mkdir(bundle, 0700); err != nil {
+		return false, err
+	}
+	if err = extractBundle(archive, bundle); err != nil {
+		return false, err
+	}
+	root, err := appDir()
+	if err != nil {
+		return false, err
+	}
+	if err = InstallBundle(ctx, bundle, root, latest.Version()); err != nil {
+		return false, err
+	}
+	_ = saveCache(Cache{CurrentVersion: latest.Version(), LastCheck: time.Now(), LatestVersion: latest.Version()})
+	fmt.Printf("Installed complete release %s. Existing sessions retain their original daemon; start a new session to use this release.\n", latest.Version())
 	return true, nil
 }
 
@@ -183,25 +182,6 @@ func ShouldCheckUpdates(args []string) bool {
 	return true
 }
 
-// checkWritePermission verifies the binary can be replaced without sudo.
-func checkWritePermission(exePath string) error {
-	dir := filepath.Dir(exePath)
-	info, err := os.Stat(dir)
-	if err != nil {
-		return fmt.Errorf("cannot access %s: %w", dir, err)
-	}
-	// Check if the directory is writable by opening a temp file
-	tmpFile := filepath.Join(dir, ".cloak-agent-update-test")
-	f, err := os.Create(tmpFile)
-	if err != nil {
-		_ = info // used above
-		return fmt.Errorf("no write permission to %s\nThe binary is at: %s\nEither move it to a user-owned directory or run: sudo cloak-agent upgrade", dir, exePath)
-	}
-	f.Close()
-	os.Remove(tmpFile)
-	return nil
-}
-
 func newUpdater() (*selfupdate.Updater, error) {
 	source, err := selfupdate.NewGitHubSource(selfupdate.GitHubConfig{})
 	if err != nil {
@@ -214,6 +194,9 @@ func newUpdater() (*selfupdate.Updater, error) {
 }
 
 func appDir() (string, error) {
+	if root := os.Getenv("CLOAK_AGENT_INSTALL_DIR"); root != "" {
+		return filepath.Abs(root)
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("cannot determine home directory: %w", err)

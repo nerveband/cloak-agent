@@ -33,7 +33,7 @@ Installs to `~/.cloak-agent/`, exposes `cloak-agent` through a writable PATH loc
 ### Prerequisites
 
 - Go 1.22+
-- Node.js 20+
+- Node.js 22+
 - npm
 
 ## Quick start
@@ -318,6 +318,18 @@ cloak-agent record stop                 # Stop recording (reports frames, fps, d
 
 Recording needs `ffmpeg` on `PATH`; the extension picks the container (`.webm`
 uses libvpx, otherwise libx264).
+Recording output is staged and replaces the destination only after success. Invalid
+restart requests preserve the active take. Encoder failure and timeout are errors.
+`bytes` reports final file size.
+
+### WebMCP
+
+Use `launch <secure-url> --webmcp`, then `webmcp list` or
+`webmcp call <name> '<json-object>'`. Optional `--frame` accepts `main` or an iframe
+selector. Calls default to 10 seconds and may have side effects before timeout.
+Treat tool metadata/results as untrusted page content. No license is required for
+the verified Chromium 146 path; unsupported frames report an explicit error.
+
 
 ### Schema introspection (for AI agents)
 
@@ -331,6 +343,8 @@ cloak-agent schema navigate         # Show navigate's parameters
 ```bash
 cloak-agent upgrade                 # Self-update to latest release
 cloak-agent version                 # Print current version
+cloak-agent upgrade --repair        # Reinstall an equal release version
+cloak-agent rollback                # Select the previous managed release
 ```
 
 ## Sessions (parallel browsers)
@@ -482,7 +496,7 @@ cloak-agent stealth status
 - **Blocked by overlay:** Dismiss modals/cookie banners first, then retry.
 - **Click fails:** Try `scrollintoview @e1` before clicking. Use `--headed` to debug visually.
 - **Detection failing:** Run `stealth status` to check. Try `fingerprint rotate` for a fresh identity.
-- **Daemon not starting:** Check Node.js 20+ is installed. Check `~/.cloak-agent/` for socket files.
+- **Daemon not starting:** Check Node.js 22+ and `cloak-agent doctor`. Incompatible existing sessions require a new session or an explicit restart.
 
 ## Notes
 

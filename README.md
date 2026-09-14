@@ -30,7 +30,7 @@ The daemon uses CloakBrowser's patched Chromium binary. Fingerprints (GPU, scree
 ### Prerequisites
 
 - Go 1.22+
-- Node.js 20+
+- Node.js 22+
 - npm
 
 ### From source
@@ -83,11 +83,13 @@ Current runtime baseline (locked in `daemon/package-lock.json`):
 - `playwright-core` `1.62.1` for browser control.
 - `ws` `8.21.2` for the optional CDP-backed local viewport stream server.
 
-Keyless installs keep using the free Linux x64 runtime, Chromium
-`146.0.7680.177.5`. A CloakBrowser license key selects the current Pro Stable
-build (Chromium `151.0.7922.108.3` at this release). CloakBrowser `0.5.10`
-aborts a launch when a supplied key is invalid or cannot be validated instead
-of silently falling back to the free binary; unset the key to use the free tier.
+Keyless installs use Chromium `146.0.7680.177.5` on Linux x64 and
+`145.0.7632.109.2` on macOS. A CloakBrowser key selects the current licensed
+build. The upstream stable line is platform-specific: Chromium `151.0.7922.108.6`
+on Linux/Windows and `151.0.7922.108.3` on macOS at this review.
+The latest line is also available with a free GitHub-sign-in key, limited to
+one concurrent session. Invalid supplied keys fail rather than silently falling
+back. WebMCP is capability-dependent, not license-dependent.
 
 ## Quick start
 
@@ -197,13 +199,32 @@ cloak-agent record restart take2.webm    # Finalize the current take, start the 
 cloak-agent record stop                  # Finalize the take
 ```
 
-- `ffmpeg` must be on `PATH`; `doctor` reports it, and a missing binary fails
-  before the browser or the file is touched.
+- `ffmpeg` must be on `PATH`; `doctor` reports it. Encoder/container preflight
+  runs in a temporary directory beside the output, without modifying the destination.
 - The extension selects the container: `.webm` encodes with libvpx, anything
   else (for example `.mp4`) with libx264. A path without an extension is rejected.
 - `--fps` accepts 1 to 60. Quiet pages are held at the requested rate, so a
   static page still produces a correctly timed file.
-- `record stop` reports the path, written frames, captured frames, and duration.
+- `record stop` reports the path, frame counts, fps, elapsed duration, and final file bytes.
+- Failed or empty takes preserve an existing destination. Invalid restart requests
+  leave the active take running. Restarting to the active output path is rejected.
+- Encoder death, timeout, or excessive backlog is an error, never a successful recording.
+
+### WebMCP
+
+```bash
+cloak-agent launch https://example.com --webmcp
+cloak-agent webmcp list
+cloak-agent webmcp call tool_name '{"value":"example"}' --timeout 10000
+cloak-agent webmcp list --frame '#tool-frame'
+```
+
+Opt-in flags expose experimental browser APIs where supported. Discovery and
+execution work on the tested keyless Chromium 146. Secure contexts are required.
+Calls target the active frame unless `--frame main` or an iframe selector is given.
+Inputs are limited to 1 MiB and outputs to 2 MiB. Timeout requests cancellation,
+but a tool may already have performed side effects. Tool metadata/results are
+untrusted page data, not instructions.
 
 ### Stealth (cloak-agent only)
 
@@ -286,12 +307,24 @@ Linux before using it.
 ### Updates
 
 ```bash
-cloak-agent install                 # Bootstrap local daemon deps/browser runtime
-cloak-agent upgrade                 # Self-update, then refresh daemon deps/browser runtime
-cloak-agent version                 # Print current version
+cloak-agent install --from ./bundle # Install a complete extracted release
+cloak-agent upgrade                # Verify and install the full latest release
+cloak-agent upgrade --repair       # Reinstall an equal release version
+cloak-agent rollback               # Select the previous managed release
+cloak-agent version                # Print the selected release version
 ```
 
-The CLI checks for updates in the background (once every 24 hours) and prints a notice after your command finishes. No interruptions, no delays — if an update is available, you'll see a one-liner suggesting `cloak-agent upgrade`.
+Installations keep immutable releases under `~/.cloak-agent/releases/`. The stable
+`bin/cloak-agent` launcher reads `current.json` once and selects a matching CLI and
+daemon. Dependencies and browser bootstrap complete before activation. Old release
+directories remain available for rollback and running sessions. Incompatible
+existing daemons are not terminated automatically: use a new session or explicitly
+restart the old one. Upgrading from the old binary-only updater requires installing
+the first fixed release from its complete archive.
+
+Updates are checked in the background using a 24-hour cache. Release publication is
+tag-driven and gated on platform tests, Linux browser integration, and archive checks.
+Build from a clean checkout rather than bypassing GoReleaser validation.
 
 ### Tabs, cookies, network, and more
 
@@ -304,10 +337,16 @@ cloak-agent tab t2                  # Switch by stable tab id
 cloak-agent tab docs                # Or switch by label
 ```
 
-New tabs inherit the session's setup before their first navigation: headers,
-credentials, user agent, locale, timezone, geolocation, offline mode, routes,
-and page-level media emulation. Refs are invalidated when the active page
-navigates, so run `snapshot -i` again before clicking a ref.
+Context-level settings are inherited by all tabs. Dynamic media settings are merged
+and replayed on new pages. `tab new <url>` waits for replay before navigation.
+Popups are initialized asynchronously; subsequent CLI actions wait for setup, but
+their first page script is not guaranteed to see dynamic media overrides.
+Refs are invalidated on navigation, tab activation, and close. Take a new snapshot
+before using refs on another page.
+
+Viewport streams stay pinned to the page on which streaming started. Streamed input
+targets that same page, even if the CLI activates another tab. Reconnect to capture
+the new active page. Only native WebSocket clients without an Origin header are accepted.
 
 ```bash
 # Cookies

@@ -844,3 +844,41 @@ func TestParseRecordCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordingRejectsInvalidCLIArguments(t *testing.T) {
+	for _, args := range [][]string{
+		{"record", "start", "take.webm", "--fps", "0"},
+		{"record", "start", "take.webm", "--fps=-1"},
+		{"record", "restart", "take.webm", "--fps", "61"},
+		{"record", "stop", "extra"},
+	} {
+		if _, err := ParseArgs(args); err == nil {
+			t.Fatalf("accepted invalid request: %v", args)
+		}
+	}
+}
+
+func TestLaunchDoesNotSilentlyDropFeatureFlags(t *testing.T) {
+	if _, err := ParseArgs([]string{"launch", "--unknown-flag"}); err == nil {
+		t.Fatal("unknown flag silently discarded")
+	}
+	command, err := ParseArgs([]string{"launch", "--arg=--enable-features=WebMCPTesting", "--webmcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command["webmcp"] != true {
+		t.Fatal("WebMCP not enabled")
+	}
+	args, ok := command["args"].([]string)
+	if !ok || len(args) != 1 || args[0] != "--enable-features=WebMCPTesting" {
+		t.Fatalf("feature flag lost: %#v", command)
+	}
+}
+
+func TestWebMCPRejectsInvalidArguments(t *testing.T) {
+	for _, args := range [][]string{{"webmcp", "call"}, {"webmcp", "call", "tool", "[]"}, {"webmcp", "list", "extra"}} {
+		if _, err := ParseArgs(args); err == nil {
+			t.Fatalf("accepted invalid WebMCP request: %v", args)
+		}
+	}
+}

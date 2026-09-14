@@ -1,25 +1,12 @@
 $ErrorActionPreference = "Stop"
-
-foreach ($command in @("node", "npm", "npx")) {
-    if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
-        throw "$command was not found in PATH. Install Node.js 20 or newer first."
-    }
-}
-
 $archiveRoot = Split-Path -Parent $PSScriptRoot
 $binary = Join-Path $archiveRoot "cloak-agent.exe"
-$daemonManifest = Join-Path $archiveRoot "daemon\package.json"
-
 if (-not (Test-Path $binary)) {
-    throw "cloak-agent.exe was not found at $binary. Run this script from an extracted release archive."
+    throw "Extract the complete release archive before running install.ps1."
 }
-if (-not (Test-Path $daemonManifest)) {
-    throw "The bundled daemon manifest was not found at $daemonManifest. Extract the complete release archive."
-}
-
-& $binary install
+& $binary install --from $archiveRoot
 if ($LASTEXITCODE -ne 0) {
-    throw "cloak-agent install failed with exit code $LASTEXITCODE."
+    throw "Installation failed with exit code $LASTEXITCODE. The prior managed release remains selected."
 }
-
-Write-Host "Installation complete. Keep cloak-agent.exe and the daemon directory together."
+$installRoot = if ($env:CLOAK_AGENT_INSTALL_DIR) { $env:CLOAK_AGENT_INSTALL_DIR } else { Join-Path $HOME ".cloak-agent" }
+Write-Host "Installation complete. Add $(Join-Path $installRoot 'bin') to PATH."

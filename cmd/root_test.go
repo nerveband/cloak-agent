@@ -1,11 +1,6 @@
 package cmd
 
-import (
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestEnsureCommandIDPreservesExistingID(t *testing.T) {
 	command := map[string]interface{}{
@@ -87,58 +82,5 @@ func TestApplyGlobalCommandFlagsClearCAWinsOverEnvironment(t *testing.T) {
 	}
 	if _, ok := command["caCert"]; ok {
 		t.Fatal("clear flag must suppress environment CA")
-	}
-}
-
-func TestInstallScriptBootstrapsCloakBrowser(t *testing.T) {
-	scriptPath := filepath.Join("..", "scripts", "install.sh")
-	data, err := os.ReadFile(scriptPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "cloakbrowser install") {
-		t.Fatalf("expected %s to run cloakbrowser install", scriptPath)
-	}
-}
-
-func TestInstallScriptAvoidsUsrLocalOnlyPath(t *testing.T) {
-	scriptPath := filepath.Join("..", "scripts", "install.sh")
-	data, err := os.ReadFile(scriptPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(data)
-	if !strings.Contains(text, "path_contains") {
-		t.Fatalf("expected %s to detect whether install bin dir is already on PATH", scriptPath)
-	}
-	if !strings.Contains(text, "$HOME/.local/bin") {
-		t.Fatalf("expected %s to fall back to user-local bin directory", scriptPath)
-	}
-	if strings.Contains(text, `LINK_DIR="/usr/local/bin"`) {
-		t.Fatalf("expected %s not to rely only on /usr/local/bin", scriptPath)
-	}
-}
-
-func TestInstallScriptUsesLockedProductionDependencies(t *testing.T) {
-	scriptPath := filepath.Join("..", "scripts", "install.sh")
-	data, err := os.ReadFile(scriptPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(data)
-	if !strings.Contains(text, "package-lock.json") || !strings.Contains(text, "npm ci --omit=dev") {
-		t.Fatalf("expected %s to install the locked production dependency set", scriptPath)
-	}
-}
-func TestInstallScriptAcceptsPackagedBinaryAndDaemon(t *testing.T) {
-	scriptPath := filepath.Join("..", "scripts", "install.sh")
-	data, err := os.ReadFile(scriptPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(data)
-	if !strings.Contains(text, `-x "$PROJECT_DIR/cloak-agent"`) ||
-		!strings.Contains(text, `-f "$PROJECT_DIR/daemon/dist/daemon.js"`) {
-		t.Fatalf("expected %s to recognize a complete release archive", scriptPath)
 	}
 }

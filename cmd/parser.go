@@ -772,6 +772,8 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		}
 
 	// ── record ──────────────────────────────────────────────────────────
+	case "webmcp":
+		return parseWebMCPArgs(rest)
 	case "record":
 		return parseRecordArgs(rest)
 
@@ -1079,10 +1081,8 @@ func parseRecordArgs(rest []string) (map[string]interface{}, error) {
 	}
 	sub := rest[0]
 	if sub == "stop" {
-		for _, arg := range rest[1:] {
-			if strings.HasPrefix(arg, "--") {
-				return nil, fmt.Errorf("unknown record option: %s", arg)
-			}
+		if len(rest) != 1 {
+			return nil, fmt.Errorf("record stop does not accept arguments")
 		}
 		return map[string]interface{}{"action": "recording_stop"}, nil
 	}
@@ -1092,6 +1092,7 @@ func parseRecordArgs(rest []string) (map[string]interface{}, error) {
 
 	path := ""
 	fps := 0
+	fpsSet := false
 	for i := 1; i < len(rest); i++ {
 		arg := rest[i]
 		switch {
@@ -1104,6 +1105,7 @@ func parseRecordArgs(rest []string) (map[string]interface{}, error) {
 				return nil, fmt.Errorf("invalid --fps value: %s", rest[i+1])
 			}
 			fps = value
+			fpsSet = true
 			i++
 		case strings.HasPrefix(arg, "--fps="):
 			value, err := strconv.Atoi(strings.TrimPrefix(arg, "--fps="))
@@ -1111,6 +1113,7 @@ func parseRecordArgs(rest []string) (map[string]interface{}, error) {
 				return nil, fmt.Errorf("invalid --fps value: %s", strings.TrimPrefix(arg, "--fps="))
 			}
 			fps = value
+			fpsSet = true
 		case strings.HasPrefix(arg, "--"):
 			return nil, fmt.Errorf("unknown record option: %s", arg)
 		default:
@@ -1125,7 +1128,10 @@ func parseRecordArgs(rest []string) (map[string]interface{}, error) {
 	}
 
 	command := map[string]interface{}{"action": "recording_" + sub, "path": path}
-	if fps > 0 {
+	if fpsSet {
+		if fps < 1 || fps > 60 {
+			return nil, fmt.Errorf("--fps must be between 1 and 60")
+		}
 		command["fps"] = fps
 	}
 	return command, nil

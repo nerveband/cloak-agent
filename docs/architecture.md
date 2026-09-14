@@ -51,9 +51,19 @@ The daemon (`daemon/src/daemon.ts`) listens on the Unix socket and manages the b
 
 **Stream server** (`stream-server.ts`) — Optional WebSocket server for live viewport streaming and input forwarding. It uses Chromium CDP through `BrowserManager` for screencast frames and mouse, keyboard, and touch injection.
 The daemon starts it on `127.0.0.1` with an OS-assigned port and writes that port to `~/.cloak-agent/<session>.stream`; `doctor` also reports the active `streamPort`.
-Frames carry the streamed page's main-frame URL in `metadata.url`, and the server emits a `url` message for full-document, History API, and fragment navigation of that main frame. The handshake accepts only loopback `Host` headers and rejects browser origins, so a rebinding page cannot drive a local session; client messages are schema-validated with a 256 KB payload cap before they reach CDP.
+Frames carry the pinned page's URL in `metadata.url`, with `url` messages for full-document, History API, and fragment navigation. Input uses that same CDP session, never a newly active tab. Reconnect to select another page. Only native clients without an Origin header are accepted; Host must be loopback, and messages are validated with a 256 KiB cap.
 
-**Recording manager** (`recording.ts`) — Records the active page through `Page.startScreencast` on its own CDP session and pipes JPEG frames into `ffmpeg`. A wall-clock ticker writes frames at the requested rate (1-60, default 30) and holds the last frame through gaps, so a static page still yields a correctly timed file. `.webm` encodes with libvpx and any other extension with libx264; a missing `ffmpeg`, an extensionless path, or an out-of-range rate fails before the browser or the file is touched. `record stop` reports `frames`, `capturedFrames`, `fps`, `durationMs`, and `bytes`, and an empty take fails with `No frames captured` instead of leaving a broken file.
+**Recording manager** (`recording.ts`): Captures the active page through a dedicated CDP screencast and ffmpeg. Exact-rate frame slots use a monotonic clock; timer rounding does not affect the timeline. Encoder/container preflight and temporary output occur beside the destination. Success requires frames, exit code zero, and a nonempty file before atomic replacement. Signal, stdin, timeout, and excessive-backlog failures preserve the destination. `bytes` is final file size. Invalid restarts leave the existing take active.
+
+**Installation** (`cmd/update/install.go`): Stage immutable releases, validate versions,
+bootstrap locked dependencies, then atomically replace `current.json`. The stable
+bootstrap selects one release for both executable and daemon; old directories remain
+available for active processes and rollback. Existing incompatible sessions are
+rejected, not automatically killed.
+
+**WebMCP** (`webmcp.ts`): Explicit opt-in browser flags and secure-frame capability
+checks enable synchronous discovery/calls. Page-owned metadata/results are bounded
+and treated as untrusted data. This is not the detached CDP invocation/history API.
 
 ### Runtime dependency baseline
 

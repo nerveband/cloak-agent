@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -134,6 +135,9 @@ func executableDir() string {
 	if err != nil {
 		return ""
 	}
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+		exePath = resolved
+	}
 	return filepath.Dir(exePath)
 }
 
@@ -228,42 +232,21 @@ func IsDaemonRunning(session string) bool {
 	return isProcessAlive(proc)
 }
 
-// findDaemonJS locates daemon.js by searching several candidate paths in order.
+// findDaemonJS binds the daemon to the executing release, not the shell cwd.
 func findDaemonJS() (string, error) {
 	candidates := []string{}
-
-	// 1. CLOAK_AGENT_DAEMON_DIR env var
 	if dir := os.Getenv("CLOAK_AGENT_DAEMON_DIR"); dir != "" {
 		candidates = append(candidates, filepath.Join(dir, "dist", "daemon.js"))
+	} else {
+		dir := executableDir()
+		candidates = append(candidates, filepath.Join(dir, "daemon", "dist", "daemon.js"), filepath.Join(dir, "..", "daemon", "dist", "daemon.js"))
 	}
-
-	// 2. Source checkout layout detected from cwd / executable path.
-	if projectDir := findSourceProjectDir(); projectDir != "" {
-		candidates = append(candidates, filepath.Join(projectDir, "daemon", "dist", "daemon.js"))
-	}
-
-	// 3. Relative to the executable: <exe_dir>/daemon/dist/daemon.js and
-	// <exe_dir>/../daemon/dist/daemon.js for installed layouts.
-	if exePath, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exePath)
-		candidates = append(candidates, filepath.Join(exeDir, "daemon", "dist", "daemon.js"))
-		candidates = append(candidates, filepath.Join(exeDir, "..", "daemon", "dist", "daemon.js"))
-	}
-
-	// 4. Relative to app dir: ~/.cloak-agent/daemon/dist/daemon.js
-	candidates = append(candidates, filepath.Join(GetAppDir(), "daemon", "dist", "daemon.js"))
-
-	for _, p := range candidates {
-		abs, err := filepath.Abs(p)
-		if err != nil {
-			continue
-		}
-		if _, err := os.Stat(abs); err == nil {
-			return abs, nil
+	for _, candidate := range candidates {
+		if fileExists(candidate) {
+			return filepath.Abs(candidate)
 		}
 	}
-
-	return "", fmt.Errorf("daemon.js not found; searched: %s", strings.Join(candidates, ", "))
+	return "", fmt.Errorf("matching daemon.js not found beside executable; install the complete release")
 }
 
 // StartDaemon spawns the Node.js daemon process for the given session.
@@ -271,6 +254,19 @@ func StartDaemon(session string) error {
 	daemonJS, err := findDaemonJS()
 	if err != nil {
 		return err
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(daemonJS), "..", "package.json"))
+	if err != nil {
+		return err
+	}
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if err = json.Unmarshal(raw, &pkg); err != nil {
+		return err
+	}
+	if Version != "dev" && pkg.Version != Version {
+		return fmt.Errorf("binary/daemon version mismatch (%s/%s); install the complete release", Version, pkg.Version)
 	}
 
 	// Ensure socket directory exists.
@@ -281,7 +277,7 @@ func StartDaemon(session string) error {
 
 	nodePath, err := exec.LookPath("node")
 	if err != nil {
-		return fmt.Errorf("node not found in PATH; install Node.js 20+ to run cloak-agent")
+		return fmt.Errorf("node not found in PATH; install Node.js 22+ to run cloak-agent")
 	}
 
 	cmd := exec.Command(nodePath, daemonJS)
@@ -366,66 +362,53 @@ func SendCommand(session string, command []byte, timeout time.Duration) ([]byte,
 			return nil, fmt.Errorf("failed to start daemon: %w", err)
 		}
 	}
-
-	socketPath := GetSocketPath(session)
-
-	var network string
+	network := "unix"
 	if runtime.GOOS == "windows" {
 		network = "tcp"
-	} else {
-		network = "unix"
 	}
-
-	conn, err := net.DialTimeout(network, socketPath, timeout)
+	conn, err := net.DialTimeout(network, GetSocketPath(session), timeout)
 	if err != nil {
-		_ = os.Remove(GetSocketPath(session))
-		_ = os.Remove(GetPidFile(session))
-		if startErr := StartDaemon(session); startErr != nil {
-			return nil, fmt.Errorf("failed to restart daemon after stale socket: %w", startErr)
-		}
-		conn, err = net.DialTimeout(network, socketPath, timeout)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to daemon: %w", err)
-		}
+		return nil, fmt.Errorf("cannot connect to session %q; inspect its daemon before restarting: %w", session, err)
 	}
 	defer conn.Close()
-
-	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
-		return nil, fmt.Errorf("failed to set deadline: %w", err)
+	if err = conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, err
 	}
-
-	// Write command terminated by newline.
-	msg := append(command, '\n')
-	if _, err := conn.Write(msg); err != nil {
-		return nil, fmt.Errorf("failed to send command: %w", err)
-	}
-
-	// Read response until newline.
-	var buf []byte
-	tmp := make([]byte, 4096)
-	for {
-		n, err := conn.Read(tmp)
-		if n > 0 {
-			buf = append(buf, tmp[:n]...)
-			if idx := indexOf(buf, '\n'); idx >= 0 {
-				return buf[:idx], nil
+	reader := bufio.NewReader(conn)
+	exchange := func(payload []byte) ([]byte, error) {
+		if _, err := conn.Write(append(payload, '\n')); err != nil {
+			return nil, err
+		}
+		var response []byte
+		for {
+			part, more, err := reader.ReadLine()
+			if err != nil {
+				return nil, err
+			}
+			if len(response)+len(part) > 8<<20 {
+				return nil, fmt.Errorf("daemon response exceeds 8 MiB")
+			}
+			response = append(response, part...)
+			if !more {
+				return response, nil
 			}
 		}
-		if err != nil {
-			if len(buf) > 0 {
-				return buf, nil
-			}
-			return nil, fmt.Errorf("failed to read response: %w", err)
-		}
 	}
-}
-
-// indexOf returns the index of the first occurrence of b in data, or -1.
-func indexOf(data []byte, b byte) int {
-	for i, v := range data {
-		if v == b {
-			return i
-		}
+	status, err := exchange([]byte(`{"id":"_version","action":"runtime_status"}`))
+	if err != nil {
+		return nil, err
 	}
-	return -1
+	var handshake struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Version string `json:"version"`
+		} `json:"data"`
+	}
+	if err = json.Unmarshal(status, &handshake); err != nil {
+		return nil, err
+	}
+	if !handshake.OK || (Version != "dev" && handshake.Data.Version != Version) {
+		return nil, fmt.Errorf("session %q uses an incompatible daemon (%s; CLI %s). Use a new --session or explicitly restart this session; existing work was not stopped", session, handshake.Data.Version, Version)
+	}
+	return exchange(command)
 }

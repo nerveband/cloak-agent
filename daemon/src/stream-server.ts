@@ -80,7 +80,7 @@ const streamMessageSchema = z.union([
     type: z.literal('input_keyboard'),
     action: z.enum(['keydown', 'keyup', 'press']),
     key: z.string().min(1).max(64),
-    modifiers: z.array(z.string()).optional(),
+    modifiers: z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).max(4).optional(),
   }),
   z.object({
     type: z.literal('input_touch'),
@@ -146,6 +146,8 @@ export class StreamServer {
   private viewportWidth: number = 1920;
   private viewportHeight: number = 947;
   private currentUrl: string | null = null;
+  private screencastOperations: Promise<void> = Promise.resolve();
+  private stopping = false;
 
   constructor(
     private browser: BrowserManager,
@@ -155,16 +157,16 @@ export class StreamServer {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   async start(): Promise<number> {
+    this.stopping = false;
     this.wss = new WebSocketServer({
       host: '127.0.0.1',
       port: this.port,
       maxPayload: 256 * 1024,
       verifyClient: (info: { origin: string; secure: boolean; req: IncomingMessage }) => {
         const origin = info.origin;
-        // Reject connections from browser origins (http:// or https://)
-        // Only allow no-origin (empty/undefined) or file:// origins
-        if (origin && origin.startsWith('http://')) return false;
-        if (origin && origin.startsWith('https://')) return false;
+        // This endpoint is for native clients, not web pages or opaque origins.
+        // File pages and sandboxed frames both serialize their origin as null.
+        if (origin || info.req?.headers?.origin !== undefined) return false;
         // Same-origin provenance: a rebinding page reaches the loopback port
         // with its own Host header, which no local client sends.
         const host = info.req?.headers?.host;
@@ -176,8 +178,9 @@ export class StreamServer {
       this.handleConnection(ws);
     });
 
-    await new Promise<void>((resolve) => {
-      this.wss?.once('listening', () => resolve());
+    await new Promise<void>((resolve, reject) => {
+      this.wss?.once('listening', resolve);
+      this.wss?.once('error', reject);
     });
 
     const address = this.wss.address();
@@ -188,32 +191,23 @@ export class StreamServer {
     return this.port;
   }
 
-  stop(): void {
-    // Close all clients
-    for (const client of this.clients) {
-      try {
-        client.close(1001, 'Server shutting down');
-      } catch {
-        // ignore
-      }
-    }
+  async stop(): Promise<void> {
+    this.stopping = true;
+    for (const client of this.clients) client.terminate();
     this.clients.clear();
-
-    // Stop screencasting
-    if (this.screencasting) {
-      this.stopScreencast().catch(() => {});
-    }
-
-    // Close the server
-    if (this.wss) {
-      this.wss.close();
+    try {
+      await this.stopScreencast();
+    } finally {
+      const server = this.wss;
       this.wss = null;
+      if (server) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
   }
 
   // ── Connection handling ────────────────────────────────────────────────────
 
   handleConnection(ws: WebSocket): void {
+    if (this.stopping) { ws.close(1001, 'Server shutting down'); return; }
     this.clients.add(ws);
 
     // Send current status to new client
@@ -221,7 +215,9 @@ export class StreamServer {
 
     // Start screencast if this is the first client
     if (this.clients.size === 1) {
-      this.startScreencast().catch((err) => {
+      this.startScreencast().then(async () => {
+        if (this.clients.size === 0) await this.stopScreencast();
+      }).catch((err) => {
         this.sendError(ws, `Failed to start screencast: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
@@ -239,13 +235,14 @@ export class StreamServer {
       this.clients.delete(ws);
 
       // Stop screencast if no more clients
-      if (this.clients.size === 0 && this.screencasting) {
+      if (this.clients.size === 0) {
         this.stopScreencast().catch(() => {});
       }
     });
 
     ws.on('error', () => {
       this.clients.delete(ws);
+      if (this.clients.size === 0) void this.stopScreencast().catch(() => {});
     });
   }
 
@@ -291,20 +288,23 @@ export class StreamServer {
   // ── Screencast ─────────────────────────────────────────────────────────────
 
   async startScreencast(): Promise<void> {
-    if (this.screencasting) return;
-
-    await this.browser.startScreencast(
-      (data) => this.broadcastFrame(data),
-      (url) => this.broadcastUrl(url),
-    );
-    this.screencasting = true;
+    const operation = this.screencastOperations.then(async () => {
+      if (this.screencasting || this.stopping) return;
+      await this.browser.startScreencast(data => this.broadcastFrame(data), url => this.broadcastUrl(url));
+      this.screencasting = true;
+    });
+    this.screencastOperations = operation.catch(() => {});
+    return operation;
   }
 
   async stopScreencast(): Promise<void> {
-    if (!this.screencasting) return;
-
-    await this.browser.stopScreencast();
-    this.screencasting = false;
+    const operation = this.screencastOperations.then(async () => {
+      if (!this.screencasting) return;
+      try { await this.browser.stopScreencast(); }
+      finally { this.screencasting = false; this.currentUrl = null; }
+    });
+    this.screencastOperations = operation.catch(() => {});
+    return operation;
   }
 
   // ── Broadcasting ───────────────────────────────────────────────────────────
