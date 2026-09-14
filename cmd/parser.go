@@ -773,20 +773,7 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 
 	// ── record ──────────────────────────────────────────────────────────
 	case "record":
-		if len(rest) < 1 {
-			return nil, fmt.Errorf("record requires a subcommand")
-		}
-		switch rest[0] {
-		case "start":
-			if len(rest) < 2 {
-				return nil, fmt.Errorf("record start requires a path")
-			}
-			return map[string]interface{}{"action": "recording_start", "path": rest[1]}, nil
-		case "stop":
-			return map[string]interface{}{"action": "recording_stop"}, nil
-		default:
-			return nil, fmt.Errorf("unknown record subcommand: %s", rest[0])
-		}
+		return parseRecordArgs(rest)
 
 	case "profiler":
 		if len(rest) < 1 {
@@ -1081,6 +1068,67 @@ func semanticLocatorNeedsValue(subaction string) bool {
 	default:
 		return false
 	}
+}
+
+// parseRecordArgs maps `record start|restart <path> [--fps N]` and
+// `record stop` onto the daemon's recording actions. Path extension and fps
+// range are validated by the daemon so the CLI and JSON surfaces agree.
+func parseRecordArgs(rest []string) (map[string]interface{}, error) {
+	if len(rest) < 1 {
+		return nil, fmt.Errorf("record requires a subcommand")
+	}
+	sub := rest[0]
+	if sub == "stop" {
+		for _, arg := range rest[1:] {
+			if strings.HasPrefix(arg, "--") {
+				return nil, fmt.Errorf("unknown record option: %s", arg)
+			}
+		}
+		return map[string]interface{}{"action": "recording_stop"}, nil
+	}
+	if sub != "start" && sub != "restart" {
+		return nil, fmt.Errorf("unknown record subcommand: %s", sub)
+	}
+
+	path := ""
+	fps := 0
+	for i := 1; i < len(rest); i++ {
+		arg := rest[i]
+		switch {
+		case arg == "--fps":
+			if i+1 >= len(rest) {
+				return nil, fmt.Errorf("--fps requires a value")
+			}
+			value, err := strconv.Atoi(rest[i+1])
+			if err != nil {
+				return nil, fmt.Errorf("invalid --fps value: %s", rest[i+1])
+			}
+			fps = value
+			i++
+		case strings.HasPrefix(arg, "--fps="):
+			value, err := strconv.Atoi(strings.TrimPrefix(arg, "--fps="))
+			if err != nil {
+				return nil, fmt.Errorf("invalid --fps value: %s", strings.TrimPrefix(arg, "--fps="))
+			}
+			fps = value
+		case strings.HasPrefix(arg, "--"):
+			return nil, fmt.Errorf("unknown record option: %s", arg)
+		default:
+			if path != "" {
+				return nil, fmt.Errorf("record %s accepts one output path", sub)
+			}
+			path = arg
+		}
+	}
+	if path == "" {
+		return nil, fmt.Errorf("record %s requires a path", sub)
+	}
+
+	command := map[string]interface{}{"action": "recording_" + sub, "path": path}
+	if fps > 0 {
+		command["fps"] = fps
+	}
+	return command, nil
 }
 
 // ParseRawJSON parses a raw JSON string into a map.

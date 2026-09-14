@@ -217,6 +217,12 @@ cloak-agent tab 2                      # Switch to tab 2
 cloak-agent tab close                  # Close current tab
 ```
 
+New tabs inherit the session's setup before their first navigation: headers,
+credentials, user agent, locale, timezone, geolocation, offline mode, routes,
+color scheme, and media emulation. Refs are invalidated when the active page
+navigates (full document, History API, or fragment), so re-run `snapshot -i`
+after any navigation before using a ref.
+
 ## Dialogs
 
 ```bash
@@ -247,9 +253,20 @@ cloak-agent state load auth.json       # Load saved state (set before navigating
 ```bash
 cloak-agent trace start                # Start recording trace
 cloak-agent trace stop trace.zip       # Stop and save trace
-cloak-agent record start demo.webm     # Start video recording
-cloak-agent record stop                # Stop recording
+cloak-agent record start demo.webm     # Record the active page (30 fps default)
+cloak-agent record start demo.mp4 --fps 60
+cloak-agent record restart take2.webm  # Finalize the take, start the next one
+cloak-agent record stop                # Finalize the take
 ```
+
+`record` captures the active page through a CDP screencast piped into `ffmpeg`.
+Requires `ffmpeg` on `PATH` (`doctor` reports it). The output extension selects
+the container: `.webm` uses libvpx, anything else uses libx264; an extensionless
+path is rejected. `--fps` accepts 1-60. Frames are written at the requested rate
+even while the page is static, so the file duration matches the wall-clock take.
+`record stop` reports `path`, `frames`, `capturedFrames`, `fps`, `durationMs`,
+and `bytes`; a take with no captured frames fails instead of leaving an empty
+file. `record restart` finalizes the current take and keeps its file.
 
 ## Debugging
 

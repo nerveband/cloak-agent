@@ -2,6 +2,7 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
+import { z } from 'zod';
 import type { BrowserManager } from './browser.js';
 import type { StreamKeyboardInput, StreamMouseInput, StreamTouchInput } from './browser.js';
 
@@ -13,6 +14,7 @@ interface StatusMessage {
   screencasting: boolean;
   viewportWidth: number;
   viewportHeight: number;
+  url: string | null;
 }
 
 interface ErrorMessage {
@@ -20,10 +22,16 @@ interface ErrorMessage {
   message: string;
 }
 
+interface UrlMessage {
+  type: 'url';
+  url: string;
+  timestamp: number;
+}
+
 interface FrameMessage {
   type: 'frame';
   data: string;
-  metadata?: { timestamp: number };
+  metadata: { timestamp: number; url: string | null };
 }
 
 interface InputMouseMessage extends StreamMouseInput {
@@ -44,10 +52,89 @@ type ClientMessage =
   | InputTouchMessage
   | { type: 'status' };
 
-function unknownMessageType(message: never): string {
-  return typeof message === 'object' && message !== null && 'type' in message
-    ? String((message as { type: unknown }).type)
-    : 'unknown';
+function unknownMessageType(message: unknown): string {
+  if (typeof message === 'object' && message !== null && 'type' in message) {
+    return String(message.type);
+  }
+  return 'unknown';
+}
+
+const LOOPBACK_HOST_NAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+const KNOWN_MESSAGE_TYPES: Record<string, true> = {
+  input_mouse: true,
+  input_keyboard: true,
+  input_touch: true,
+  status: true,
+};
+
+const streamMessageSchema = z.union([
+  z.object({
+    type: z.literal('input_mouse'),
+    action: z.enum(['move', 'down', 'up', 'click']),
+    x: z.number().finite(),
+    y: z.number().finite(),
+    button: z.enum(['left', 'right', 'middle']).optional(),
+  }),
+  z.object({
+    type: z.literal('input_keyboard'),
+    action: z.enum(['keydown', 'keyup', 'press']),
+    key: z.string().min(1).max(64),
+    modifiers: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal('input_touch'),
+    action: z.enum(['start', 'move', 'end', 'cancel']),
+    x: z.number().finite(),
+    y: z.number().finite(),
+  }),
+  z.object({ type: z.literal('status') }),
+]);
+
+/**
+ * Accept only loopback Host headers. The listener already binds 127.0.0.1, but a
+ * page can resolve an attacker-controlled name to 127.0.0.1 (DNS rebinding) and
+ * reach a local server from a browser; its handshake then carries the attacker's
+ * host, which a real local client never sends.
+ */
+export function isAllowedStreamHost(host: string | undefined, port: number): boolean {
+  if (!host) {
+    return false;
+  }
+  const normalized = host.trim().toLowerCase();
+  const match = /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/.exec(normalized);
+  if (!match) {
+    return false;
+  }
+  if (!LOOPBACK_HOST_NAMES.has(match[1])) {
+    return false;
+  }
+  const headerPort = match[2];
+  if (port > 0 && headerPort !== undefined && Number(headerPort) !== port) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Parse a client message. Anything that would reach CDP as NaN, an oversized
+ * key, or an unknown enum is rejected here rather than forwarded.
+ */
+export function parseStreamMessage(payload: unknown): ClientMessage | null {
+  const result = streamMessageSchema.safeParse(payload);
+  return result.success ? result.data : null;
+}
+
+/** Human-readable reason for a rejected payload. */
+export function streamMessageRejection(payload: unknown): string {
+  if (typeof payload !== 'object' || payload === null || !('type' in payload)) {
+    return 'Invalid message format';
+  }
+  const { type } = payload;
+  if (typeof type !== 'string' || !KNOWN_MESSAGE_TYPES[type]) {
+    return `Unknown message type: ${unknownMessageType(payload)}`;
+  }
+  return `Invalid ${type} message`;
 }
 
 // ── StreamServer ───────────────────────────────────────────────────────────────
@@ -58,6 +145,7 @@ export class StreamServer {
   private screencasting: boolean = false;
   private viewportWidth: number = 1920;
   private viewportHeight: number = 947;
+  private currentUrl: string | null = null;
 
   constructor(
     private browser: BrowserManager,
@@ -70,13 +158,17 @@ export class StreamServer {
     this.wss = new WebSocketServer({
       host: '127.0.0.1',
       port: this.port,
+      maxPayload: 256 * 1024,
       verifyClient: (info: { origin: string; secure: boolean; req: IncomingMessage }) => {
         const origin = info.origin;
         // Reject connections from browser origins (http:// or https://)
         // Only allow no-origin (empty/undefined) or file:// origins
         if (origin && origin.startsWith('http://')) return false;
         if (origin && origin.startsWith('https://')) return false;
-        return true;
+        // Same-origin provenance: a rebinding page reaches the loopback port
+        // with its own Host header, which no local client sends.
+        const host = info.req?.headers?.host;
+        return isAllowedStreamHost(typeof host === 'string' ? host : undefined, this.port);
       },
     });
 
@@ -136,8 +228,8 @@ export class StreamServer {
 
     ws.on('message', (data: Buffer | string) => {
       try {
-        const message = JSON.parse(typeof data === 'string' ? data : data.toString('utf-8'));
-        this.handleMessage(message as ClientMessage, ws);
+        const payload = JSON.parse(typeof data === 'string' ? data : data.toString('utf-8'));
+        this.handleMessage(payload, ws);
       } catch {
         this.sendError(ws, 'Invalid message format');
       }
@@ -157,7 +249,13 @@ export class StreamServer {
     });
   }
 
-  handleMessage(message: ClientMessage, ws: WebSocket): void {
+  handleMessage(payload: unknown, ws: WebSocket): void {
+    const message = parseStreamMessage(payload);
+    if (!message) {
+      this.sendError(ws, streamMessageRejection(payload));
+      return;
+    }
+
     switch (message.type) {
       case 'input_mouse':
         this.handleMouseInput(message);
@@ -195,7 +293,10 @@ export class StreamServer {
   async startScreencast(): Promise<void> {
     if (this.screencasting) return;
 
-    await this.browser.startScreencast((data) => this.broadcastFrame(data));
+    await this.browser.startScreencast(
+      (data) => this.broadcastFrame(data),
+      (url) => this.broadcastUrl(url),
+    );
     this.screencasting = true;
   }
 
@@ -212,10 +313,26 @@ export class StreamServer {
     const message: FrameMessage = {
       type: 'frame',
       data,
-      metadata: { timestamp: Date.now() },
+      metadata: { timestamp: Date.now(), url: this.currentUrl },
     };
-    const payload = JSON.stringify(message);
+    this.sendToClients(JSON.stringify(message));
+  }
 
+  /** Emit the streamed page's main-frame URL for full and same-document moves. */
+  broadcastUrl(url: string): void {
+    if (url === this.currentUrl) {
+      return;
+    }
+    this.currentUrl = url;
+    const message: UrlMessage = {
+      type: 'url',
+      url,
+      timestamp: Date.now(),
+    };
+    this.sendToClients(JSON.stringify(message));
+  }
+
+  private sendToClients(payload: string): void {
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(payload);
@@ -232,6 +349,7 @@ export class StreamServer {
       screencasting: this.screencasting,
       viewportWidth: this.viewportWidth,
       viewportHeight: this.viewportHeight,
+      url: this.currentUrl,
     };
 
     if (ws.readyState === WebSocket.OPEN) {

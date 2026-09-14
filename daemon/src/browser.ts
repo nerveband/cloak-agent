@@ -7,6 +7,11 @@ import { getEnhancedSnapshot, type RefData, type SnapshotOptions } from './snaps
 import { toAIFriendlyError } from './errors.js';
 import type { StealthOptions } from './stealth.js';
 import { prepareCATrust, type PreparedCATrust } from './ca-trust.js';
+import {
+  RecordingManager,
+  type RecordingResult,
+  type RecordingStatus,
+} from './recording.js';
 
 // ── Launch options ──────────────────────────────────────────────────────────
 
@@ -53,6 +58,12 @@ export interface StreamTouchInput {
   y: number;
 }
 
+/** Page-level emulation applied to the active page and inherited by new tabs. */
+export interface MediaEmulationState {
+  media?: 'screen' | 'print' | null;
+  colorScheme?: 'light' | 'dark' | 'no-preference' | null;
+}
+
 export interface RuntimeStatus {
   launched: boolean;
   activePageIndex: number | null;
@@ -62,6 +73,8 @@ export interface RuntimeStatus {
   };
   tabs: Array<{ index: number; url: string; title: string }>;
   contextCount: number;
+  recording: RecordingStatus;
+  streamUrl: string | null;
 }
 
 export interface TrackedRequest {
@@ -100,6 +113,9 @@ export class BrowserManager {
   private tabLabels = new Map<string, Page>();
   private nextTabId = 1;
   private preparedCATrust: PreparedCATrust | null = null;
+  private recording = new RecordingManager();
+  private mediaEmulation: MediaEmulationState | null = null;
+  private streamUrl: string | null = null;
 
   // ── Query state ─────────────────────────────────────────────────────────
 
@@ -244,6 +260,59 @@ export class BrowserManager {
       }
       this.pendingDialog = dialog;
     });
+
+    // A main-frame URL change (full document, History API, or fragment) makes
+    // every ref from the previous snapshot stale. Clearing them here keeps the
+    // next click honest instead of binding the ref to whatever now matches the
+    // old role and name.
+    page.on('framenavigated', (frame) => {
+      if (page === this.pages[this.activePageIndex] && frame === page.mainFrame()) {
+        this.invalidateSnapshotState();
+        this.streamUrl = page.url();
+      }
+    });
+  }
+
+  /**
+   * Page-level state the session expects on every tab. Context-level settings
+   * (headers, credentials, locale, timezone, user agent, geolocation, offline,
+   * routes) are inherited by new pages through the shared BrowserContext;
+   * media emulation is per page, so it is replayed on each new page before its
+   * first navigation.
+   */
+  async applyStoredPageState(page: Page): Promise<void> {
+    if (!this.mediaEmulation) {
+      return;
+    }
+    const opts: Record<string, unknown> = {};
+    if (this.mediaEmulation.media !== undefined) {
+      opts.media = this.mediaEmulation.media;
+    }
+    if (this.mediaEmulation.colorScheme !== undefined) {
+      opts.colorScheme = this.mediaEmulation.colorScheme;
+    }
+    await page.emulateMedia(opts).catch(() => {});
+  }
+
+  /** Record page-level emulation and apply it to the active page. */
+  async setMediaEmulation(state: MediaEmulationState): Promise<void> {
+    this.mediaEmulation = state;
+    const page = this.getPage();
+    const opts: Record<string, unknown> = {};
+    if (state.media !== undefined) {
+      opts.media = state.media;
+    }
+    if (state.colorScheme !== undefined) {
+      opts.colorScheme = state.colorScheme;
+    }
+    await page.emulateMedia(opts);
+  }
+
+  /** Drop refs and frame scope after a navigation. */
+  invalidateSnapshotState(): void {
+    this.refMap = {};
+    this.lastSnapshot = '';
+    this.activeFrame = null;
   }
 
   private registerPage(page: Page): void {
@@ -251,6 +320,9 @@ export class BrowserManager {
     this.pages.push(page);
     this.tabIds.set(page, `t${this.nextTabId++}`);
     this.setupPageListeners(page);
+    // Popups cannot be awaited before they navigate, so inheritance is applied
+    // as soon as the page exists.
+    void this.applyStoredPageState(page);
   }
 
   // ── Active page / frame ─────────────────────────────────────────────────
@@ -329,6 +401,10 @@ export class BrowserManager {
     if (label) {
       this.tabLabels.set(label, page);
     }
+
+    // Inherit the session's page-level setup before the first navigation, the
+    // same contract agent-browser 0.37 gives `tab new` and click-opened tabs.
+    await this.applyStoredPageState(page);
 
     if (url) {
       await page.goto(url);
@@ -435,6 +511,8 @@ export class BrowserManager {
         : undefined,
       tabs,
       contextCount: this.contexts.length,
+      recording: this.recording.status(),
+      streamUrl: this.streamUrl,
     };
   }
 
@@ -513,18 +591,67 @@ export class BrowserManager {
     this.routes = new Map();
   }
 
+  // ── Recording ───────────────────────────────────────────────────────────
+
+  async startRecording(path: string, fps?: number): Promise<RecordingStatus> {
+    return this.recording.start(this.getPage(), path, fps);
+  }
+
+  async stopRecording(): Promise<RecordingResult> {
+    return this.recording.stop();
+  }
+
+  async restartRecording(
+    path: string,
+    fps?: number,
+  ): Promise<{ previousPath: string | null; status: RecordingStatus }> {
+    return this.recording.restart(this.getPage(), path, fps);
+  }
+
+  recordingStatus(): RecordingStatus {
+    return this.recording.status();
+  }
+
   // ── CDP streaming / remote input ────────────────────────────────────────
 
-  async startScreencast(onFrame: (data: string) => void): Promise<void> {
+  async startScreencast(onFrame: (data: string) => void, onUrl?: (url: string) => void): Promise<void> {
     if (this.screencastSession) {
       return;
     }
 
     const page = this.getPage();
     const session = await page.context().newCDPSession(page);
+
+    // A raw CDP session delivers no Page events until the domain is enabled,
+    // and the navigation events below arrive from the same domain.
+    await session.send('Page.enable');
+
     session.on('Page.screencastFrame', (params: { data: string; sessionId: number }) => {
       onFrame(params.data);
       session.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
+    });
+
+    // Follow the streamed page's main frame so a viewer can label what it is
+    // looking at across full-document, History API, and fragment navigation.
+    let mainFrameId: string | null = null;
+    const publish = (nextUrl: string): void => {
+      this.streamUrl = nextUrl;
+      onUrl?.(nextUrl);
+    };
+    session.on('Page.frameNavigated', (params: { frame?: { id?: string; parentId?: string; url?: string } }) => {
+      const frame = params.frame;
+      if (!frame?.id) {
+        return;
+      }
+      if (!frame.parentId) {
+        mainFrameId = frame.id;
+        publish(frame.url ?? page.url());
+      }
+    });
+    session.on('Page.navigatedWithinDocument', (params: { frameId?: string; url?: string }) => {
+      if (params.frameId && params.frameId === mainFrameId && params.url) {
+        publish(params.url);
+      }
     });
 
     await session.send('Page.startScreencast', {
@@ -533,6 +660,13 @@ export class BrowserManager {
       maxWidth: page.viewportSize()?.width ?? 1920,
       maxHeight: page.viewportSize()?.height ?? 947,
     });
+
+    const tree = (await session.send('Page.getFrameTree').catch(() => null)) as
+      | { frameTree?: { frame?: { id?: string } } }
+      | null;
+    mainFrameId = tree?.frameTree?.frame?.id ?? mainFrameId;
+    publish(page.url());
+
     this.screencastSession = session;
   }
 
@@ -643,6 +777,7 @@ export class BrowserManager {
   // ── Teardown ────────────────────────────────────────────────────────────
 
   async close(options: { preserveLaunchOptions?: boolean } = {}): Promise<void> {
+    await this.recording.shutdown();
     await this.stopScreencast();
 
     for (const context of this.contexts) {
@@ -682,6 +817,8 @@ export class BrowserManager {
     this.tabIds = new Map();
     this.tabLabels = new Map();
     this.nextTabId = 1;
+    this.mediaEmulation = null;
+    this.streamUrl = null;
     if (!options.preserveLaunchOptions) {
       this.lastLaunchOptions = null;
     }

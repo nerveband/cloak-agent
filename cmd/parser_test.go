@@ -797,3 +797,50 @@ func TestParseGlobalFlags_AllFlags(t *testing.T) {
 		t.Errorf("remaining args = %v, want [open https://example.com]", rest)
 	}
 }
+
+func TestParseRecordCommands(t *testing.T) {
+	m, err := ParseArgs([]string{"record", "start", "demo.webm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "recording_start")
+	assertEq(t, m, "path", "demo.webm")
+	if _, ok := m["fps"]; ok {
+		t.Errorf("fps should default in the daemon, got %v", m["fps"])
+	}
+
+	m, err = ParseArgs([]string{"record", "start", "demo.webm", "--fps", "60"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "fps", 60)
+
+	m, err = ParseArgs([]string{"record", "restart", "next.mp4", "--fps=15"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "recording_restart")
+	assertEq(t, m, "path", "next.mp4")
+	assertEq(t, m, "fps", 15)
+
+	m, err = ParseArgs([]string{"record", "stop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, m, "action", "recording_stop")
+
+	for _, args := range [][]string{
+		{"record"},
+		{"record", "start"},
+		{"record", "start", "demo.webm", "--fps"},
+		{"record", "start", "demo.webm", "--fps", "fast"},
+		{"record", "start", "a.webm", "b.webm"},
+		{"record", "start", "demo.webm", "--container", "webm"},
+		{"record", "stop", "--fps", "30"},
+		{"record", "unknown"},
+	} {
+		if _, err := ParseArgs(args); err == nil {
+			t.Errorf("ParseArgs(%v) expected an error", args)
+		}
+	}
+}

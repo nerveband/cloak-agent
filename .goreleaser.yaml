@@ -47,7 +47,7 @@ archives:
       - scripts/install.ps1
       - docs/tailgate.md
       - docs/commands.md
-      - docs/upstream-sync-2026-08-24.md
+      - docs/upstream-sync-2026-09-14.md
 
 checksum:
   name_template: "checksums.txt"

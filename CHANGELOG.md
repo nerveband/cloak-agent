@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.0 — 2026-09-14
+
+- Replace the `record` stubs with real video recording. `record start <path>
+  [--fps N]`, `record restart`, and `record stop` capture the active page through
+  a dedicated CDP screencast piped into `ffmpeg` at 1-60 fps (default 30),
+  holding frames so a static page still produces a correctly timed file.
+  `.webm` encodes with libvpx and any other extension with libx264. Missing
+  ffmpeg, an extensionless path, or an out-of-range rate fails before any
+  browser or file state changes; an empty take reports `No frames captured`
+  instead of leaving a broken file; `record restart` keeps the previous take.
+- New tabs inherit the session's setup before their first navigation, including
+  page-level media emulation that previously applied only to the active page.
+- Refs are invalidated when the active page navigates (full document, History
+  API, or fragment), so a click after navigation reports a stale ref instead of
+  binding to whatever now matches the old role and name.
+- The viewport stream emits `url` messages and stamps `metadata.url` on frames
+  for the streamed page's main-frame navigation. The stream handshake now
+  requires a loopback `Host` header in addition to the existing origin checks,
+  closes the inbound payload at 256 KB, and schema-validates client input.
+- `doctor` reports ffmpeg availability for recording.
+- Update the locked CloakBrowser wrapper from 0.5.8 to 0.5.10 (humanized
+  selector fixes, seat reporting in `info`, license and geoip launch-abort
+  behavior). The keyless Linux x64 runtime remains Chromium 146.0.7680.177.5;
+  a license key selects the Chromium 151 Pro build.
+
 ## 0.4.3 — 2026-08-24
 
 - Scope update-check caches to the installed version so an upgrade never

@@ -1,9 +1,9 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 
 import type { BrowserManager } from '../src/browser.js';
-import { StreamServer } from '../src/stream-server.js';
+import { StreamServer, isAllowedStreamHost, parseStreamMessage, streamMessageRejection } from '../src/stream-server.js';
 
 class FakeSocket extends EventEmitter {
   readyState = WebSocket.OPEN;
@@ -33,12 +33,17 @@ function parseLast(socket: FakeSocket): Record<string, unknown> {
 function makeBrowser() {
   const calls: Array<{ method: string; payload?: unknown }> = [];
   let onFrame: ((data: string) => void) | null = null;
+  let onUrl: ((url: string) => void) | null = null;
 
   const browser = {
     isLaunched: () => true,
-    startScreencast: async (callback: (data: string) => void) => {
+    startScreencast: async (
+      frameCallback: (data: string) => void,
+      urlCallback?: (url: string) => void,
+    ) => {
       calls.push({ method: 'startScreencast' });
-      onFrame = callback;
+      onFrame = frameCallback;
+      onUrl = urlCallback ?? null;
     },
     stopScreencast: async () => {
       calls.push({ method: 'stopScreencast' });
@@ -62,6 +67,12 @@ function makeBrowser() {
         throw new Error('Screencast callback was not registered.');
       }
       onFrame(data);
+    },
+    emitUrl(url: string): void {
+      if (!onUrl) {
+        throw new Error('URL callback was not registered.');
+      }
+      onUrl(url);
     },
   };
 }
@@ -93,7 +104,70 @@ describe('StreamServer', () => {
     const frame = parseLast(socket);
     expect(frame.type).toBe('frame');
     expect(frame.data).toBe('jpeg-base64');
-    expect(frame.metadata).toEqual({ timestamp: expect.any(Number) });
+    expect(frame.metadata).toEqual({ timestamp: expect.any(Number), url: null });
+  });
+
+  it('broadcasts main-frame URL updates and stamps them on frames', async () => {
+    const fake = makeBrowser();
+    const server = new StreamServer(fake.browser, 0);
+    const socket = new FakeSocket();
+
+    server.handleConnection(socket as unknown as WebSocket);
+    await Promise.resolve();
+
+    fake.emitUrl('https://example.com/one');
+    expect(parseLast(socket)).toEqual({
+      type: 'url',
+      url: 'https://example.com/one',
+      timestamp: expect.any(Number),
+    });
+
+    // Repeating the same URL would be noise for a viewer.
+    const sentCount = socket.sent.length;
+    fake.emitUrl('https://example.com/one');
+    expect(socket.sent.length).toBe(sentCount);
+
+    fake.emitUrl('https://example.com/two');
+    fake.emitFrame('jpeg-base64');
+    expect(parseLast(socket).metadata).toEqual({
+      timestamp: expect.any(Number),
+      url: 'https://example.com/two',
+    });
+  });
+
+  it('rejects input messages that would reach CDP malformed', async () => {
+    const fake = makeBrowser();
+    const server = new StreamServer(fake.browser, 0);
+    const socket = new FakeSocket();
+
+    server.handleConnection(socket as unknown as WebSocket);
+    socket.emit('message', JSON.stringify({ type: 'input_mouse', action: 'click', x: 'ten', y: 20 }));
+    socket.emit('message', JSON.stringify({ type: 'input_keyboard', action: 'press', key: '' }));
+    await Promise.resolve();
+
+    expect(fake.calls.some((call) => call.method.startsWith('inject'))).toBe(false);
+    expect(socket.sent.filter((payload) => payload.includes('Invalid'))).toHaveLength(2);
+  });
+
+  it('accepts only loopback Host headers on the websocket handshake', async () => {
+    const server = new StreamServer(makeBrowser().browser, 0);
+    const port = await server.start();
+
+    const handshake = async (headers?: Record<string, string>): Promise<string> => {
+      const client = new WebSocket(`ws://127.0.0.1:${port}`, headers ? { headers } : undefined);
+      const outcome = await Promise.race([
+        once(client, 'open').then(() => 'open'),
+        once(client, 'error').then(() => 'rejected'),
+        once(client, 'unexpected-response').then(() => 'rejected'),
+      ]);
+      client.close();
+      return outcome;
+    };
+
+    expect(await handshake()).toBe('open');
+    expect(await handshake({ Host: 'rebind.attacker.test' })).toBe('rejected');
+
+    server.stop();
   });
 
   it('forwards client input messages to the browser manager', async () => {
@@ -132,5 +206,34 @@ describe('StreamServer', () => {
     await Promise.resolve();
 
     expect(fake.calls.map((call) => call.method)).toEqual(['startScreencast', 'stopScreencast']);
+  });
+});
+
+describe('stream guards', () => {
+  it('allows loopback hosts with the bound port only', () => {
+    expect(isAllowedStreamHost('127.0.0.1:9222', 9222)).toBe(true);
+    expect(isAllowedStreamHost('localhost:9222', 9222)).toBe(true);
+    expect(isAllowedStreamHost('[::1]:9222', 9222)).toBe(true);
+    expect(isAllowedStreamHost('127.0.0.1:9223', 9222)).toBe(false);
+    expect(isAllowedStreamHost('rebind.attacker.test:9222', 9222)).toBe(false);
+    expect(isAllowedStreamHost('127.0.0.1', 0)).toBe(true);
+    expect(isAllowedStreamHost(undefined, 9222)).toBe(false);
+  });
+
+  it('parses valid input messages and labels rejected ones', () => {
+    expect(parseStreamMessage({ type: 'input_mouse', action: 'move', x: 1, y: 2 })).not.toBeNull();
+    expect(parseStreamMessage({ type: 'status' })).not.toBeNull();
+
+    const badCoordinates = { type: 'input_mouse', action: 'move', x: Number.NaN, y: 2 };
+    expect(parseStreamMessage(badCoordinates)).toBeNull();
+    expect(streamMessageRejection(badCoordinates)).toBe('Invalid input_mouse message');
+
+    const badKey = { type: 'input_keyboard', action: 'press', key: '' };
+    expect(parseStreamMessage(badKey)).toBeNull();
+    expect(streamMessageRejection(badKey)).toBe('Invalid input_keyboard message');
+
+    const unknown = { type: 'input_foot' };
+    expect(streamMessageRejection(unknown)).toBe('Unknown message type: input_foot');
+    expect(streamMessageRejection('nope')).toBe('Invalid message format');
   });
 });

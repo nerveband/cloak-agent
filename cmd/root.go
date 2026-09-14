@@ -15,7 +15,7 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.4.3"
+var Version = "0.5.0"
 
 func Execute(args []string) error {
 	if len(args) == 0 {
@@ -504,6 +504,7 @@ func handleDoctor(flags GlobalFlags) error {
 	nodePath, nodeErr := exec.LookPath("node")
 	npmPath, npmErr := exec.LookPath("npm")
 	npxPath, npxErr := exec.LookPath("npx")
+	ffmpegPath, ffmpegErr := exec.LookPath("ffmpeg")
 	daemonDir := findInstalledDaemonDir()
 	daemonJS, daemonErr := findDaemonJS()
 	cloakBrowserVersion := ""
@@ -539,10 +540,12 @@ func handleDoctor(flags GlobalFlags) error {
 		"npx":                 npxPath,
 		"cloakBrowserCache":   filepath.Join(os.Getenv("HOME"), ".cloakbrowser"),
 		"cloakBrowserWrapper": cloakBrowserVersion,
+		"ffmpeg":              ffmpegPath,
 		"checks": map[string]bool{
 			"node":       nodeErr == nil,
 			"npm":        npmErr == nil,
 			"npx":        npxErr == nil,
+			"ffmpeg":     ffmpegErr == nil,
 			"daemonDir":  daemonDir != "",
 			"daemonFile": daemonErr == nil,
 		},
@@ -637,7 +640,16 @@ Daemon / sessions:
   daemon start|stop|restart      Manage persistent daemon for a session
   daemon status|logs             Inspect daemon state and logs
   session list                   List known sessions
-  doctor                         Check install, daemon, Node, and browser runtime
+  doctor                         Check install, daemon, Node, browser runtime, and ffmpeg
+
+Recording:
+  record start <path> [--fps N]  Record the current page to WebM/MP4 (default 30 fps)
+  record restart <path> [--fps N] Replace the active take, keeping the old file
+  record stop                    Finalize the recording
+  trace start|stop <path>        Playwright trace recording
+
+Recording requires ffmpeg on PATH. The file extension selects the container:
+.webm uses libvpx, anything else uses libx264.
 
 Tailgate routing:
   tailgate setup <host> [options]  Create a private SSH/Tailscale route

@@ -233,7 +233,9 @@ const highlight = z.object({ ...base, action: z.literal('highlight'), selector: 
 // --- Trace / Recording ---
 const trace_start = z.object({ ...base, action: z.literal('trace_start'), path: z.string().optional(), screenshots: z.boolean().optional(), snapshots: z.boolean().optional() });
 const trace_stop = z.object({ ...base, action: z.literal('trace_stop'), path: z.string().optional() });
-const recording_start = z.object({ ...base, action: z.literal('recording_start'), path: z.string().optional() });
+const recordingFps = z.number().int().min(1).max(60).optional();
+const recording_start = z.object({ ...base, action: z.literal('recording_start'), path: z.string().min(1), fps: recordingFps });
+const recording_restart = z.object({ ...base, action: z.literal('recording_restart'), path: z.string().min(1), fps: recordingFps });
 const recording_stop = z.object({ ...base, action: z.literal('recording_stop') });
 const profiler_start = z.object({ ...base, action: z.literal('profiler_start') });
 const profiler_stop = z.object({ ...base, action: z.literal('profiler_stop'), path: z.string().optional() });
@@ -294,7 +296,7 @@ const allSchemas = [
   // Debug
   console_, errors, highlight,
   // Trace / Recording
-  trace_start, trace_stop, recording_start, recording_stop, profiler_start, profiler_stop,
+  trace_start, trace_stop, recording_start, recording_restart, recording_stop, profiler_start, profiler_stop,
   // Semantic locators
   getbyrole, getbytext, getbylabel,
   // Mouse
@@ -470,7 +472,7 @@ function safetyMetadata(action: string): Record<string, boolean | string> {
     'cookies_clear', 'storage_set', 'storage_clear', 'dialog', 'route',
     'unroute', 'viewport', 'device', 'geolocation', 'headers', 'credentials',
     'offline', 'emulatemedia', 'state_load', 'highlight', 'trace_start',
-    'trace_stop', 'recording_start', 'recording_stop', 'fingerprint_rotate',
+    'trace_stop', 'recording_start', 'recording_restart', 'recording_stop', 'fingerprint_rotate',
     'profile_create', 'cdp',
   ]);
   const destructive = new Set(['close', 'tab_close', 'cookies_clear', 'storage_clear', 'unroute', 'fingerprint_rotate']);

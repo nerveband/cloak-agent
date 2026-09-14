@@ -954,18 +954,18 @@ export async function executeCommand(
 
       case 'emulatemedia': {
         if (command.dryRun) return dryRun(id, 'Emulate media settings');
-        const page = browser.getPage();
-        const opts: Record<string, unknown> = {};
+        const state: { media?: 'screen' | 'print' | null; colorScheme?: 'light' | 'dark' | 'no-preference' | null } = {};
         if (command.media !== undefined) {
-          opts.media = command.media === 'null' ? null : command.media;
+          state.media = command.media === 'null' ? null : command.media;
         }
         if (command.colorScheme !== undefined) {
-          opts.colorScheme = command.colorScheme === 'null' ? null : command.colorScheme;
+          state.colorScheme = command.colorScheme === 'null' ? null : command.colorScheme;
         }
-        await page.emulateMedia(opts);
+        await browser.setMediaEmulation(state);
         return successResponse(id, {
           media: command.media ?? null,
           colorScheme: command.colorScheme ?? null,
+          inheritedByNewTabs: true,
         });
       }
 
@@ -1071,18 +1071,36 @@ export async function executeCommand(
       }
 
       case 'recording_start': {
-        if (command.dryRun) return dryRun(id, 'Start action recording');
-        // If BrowserManager supports recording natively, delegate to it.
-        // Otherwise manage module-level recording state.
-        if (command.path) {
-          // Navigate to url if provided in the recording start (path is stored)
+        if (command.dryRun) {
+          return dryRun(id, `Start video recording${command.path ? ` to ${command.path}` : ''}`);
         }
-        return successResponse(id, { recording: true, path: command.path ?? null });
+        if (!command.path) {
+          return errorResponse(id, 'record start requires an output path');
+        }
+        const status = await browser.startRecording(validateFilePath(command.path), command.fps);
+        return successResponse(id, { recording: true, ...status });
+      }
+
+      case 'recording_restart': {
+        if (command.dryRun) {
+          return dryRun(id, `Restart video recording${command.path ? ` to ${command.path}` : ''}`);
+        }
+        if (!command.path) {
+          return errorResponse(id, 'record restart requires an output path');
+        }
+        const result = await browser.restartRecording(validateFilePath(command.path), command.fps);
+        return successResponse(id, {
+          recording: true,
+          restarted: true,
+          previousPath: result.previousPath,
+          ...result.status,
+        });
       }
 
       case 'recording_stop': {
-        if (command.dryRun) return dryRun(id, 'Stop action recording');
-        return successResponse(id, { recording: false });
+        if (command.dryRun) return dryRun(id, 'Stop video recording');
+        const result = await browser.stopRecording();
+        return successResponse(id, { recording: false, ...result });
       }
 
       case 'profiler_start': {

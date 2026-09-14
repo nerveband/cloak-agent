@@ -310,9 +310,14 @@ cloak-agent errors --clear              # Clear errors
 cloak-agent highlight @e1               # Highlight element
 cloak-agent trace start                 # Start recording trace
 cloak-agent trace stop trace.zip        # Stop and save trace
-cloak-agent record start ./demo.webm    # Record video
-cloak-agent record stop                 # Stop recording
+cloak-agent record start ./demo.webm    # Record the active page (30 fps default)
+cloak-agent record start ./demo.mp4 --fps 60
+cloak-agent record restart ./take2.webm # Finalize the take, start the next one
+cloak-agent record stop                 # Stop recording (reports frames, fps, duration)
 ```
+
+Recording needs `ffmpeg` on `PATH`; the extension picks the container (`.webm`
+uses libvpx, otherwise libx264).
 
 ### Schema introspection (for AI agents)
 

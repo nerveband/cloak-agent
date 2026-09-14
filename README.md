@@ -79,9 +79,15 @@ profiles and config roots removed as well.
 
 Current runtime baseline (locked in `daemon/package-lock.json`):
 
-- `cloakbrowser` `0.5.8` for the patched Chromium runtime and stable/preview release channels.
+- `cloakbrowser` `0.5.10` for the patched Chromium runtime and stable/preview release channels.
 - `playwright-core` `1.62.1` for browser control.
 - `ws` `8.21.2` for the optional CDP-backed local viewport stream server.
+
+Keyless installs keep using the free Linux x64 runtime, Chromium
+`146.0.7680.177.5`. A CloakBrowser license key selects the current Pro Stable
+build (Chromium `151.0.7922.108.3` at this release). CloakBrowser `0.5.10`
+aborts a launch when a supplied key is invalid or cannot be validated instead
+of silently falling back to the free binary; unset the key to use the free tier.
 
 ## Quick start
 
@@ -178,6 +184,26 @@ cloak-agent screenshot              # To stdout (base64)
 cloak-agent screenshot output.png   # To file
 cloak-agent screenshot --full       # Full page
 ```
+
+### Recording
+
+`record` writes the active page to a video file through a CDP screencast piped
+into `ffmpeg`, so the file's duration matches the automation it captured.
+
+```bash
+cloak-agent record start demo.webm       # 30 fps default
+cloak-agent record start demo.mp4 --fps 60
+cloak-agent record restart take2.webm    # Finalize the current take, start the next
+cloak-agent record stop                  # Finalize the take
+```
+
+- `ffmpeg` must be on `PATH`; `doctor` reports it, and a missing binary fails
+  before the browser or the file is touched.
+- The extension selects the container: `.webm` encodes with libvpx, anything
+  else (for example `.mp4`) with libx264. A path without an extension is rejected.
+- `--fps` accepts 1 to 60. Quiet pages are held at the requested rate, so a
+  static page still produces a correctly timed file.
+- `record stop` reports the path, written frames, captured frames, and duration.
 
 ### Stealth (cloak-agent only)
 
@@ -276,7 +302,14 @@ cloak-agent tab new https://x.com   # New tab
 cloak-agent tab new --label docs https://docs.example.com
 cloak-agent tab t2                  # Switch by stable tab id
 cloak-agent tab docs                # Or switch by label
+```
 
+New tabs inherit the session's setup before their first navigation: headers,
+credentials, user agent, locale, timezone, geolocation, offline mode, routes,
+and page-level media emulation. Refs are invalidated when the active page
+navigates, so run `snapshot -i` again before clicking a ref.
+
+```bash
 # Cookies
 cloak-agent cookies                 # Get all
 cloak-agent cookies set name value  # Set cookie
