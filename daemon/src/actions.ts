@@ -683,7 +683,7 @@ export async function executeCommand(
       case 'count': {
         if (command.dryRun) return dryRun(id, `Count elements matching "${command.selector}"`);
         const page = browser.getPage();
-        const n = await page.locator(command.selector).count();
+        const n = await resolveLocator(command.selector, browser, page).count();
         return successResponse(id, { count: n });
       }
 

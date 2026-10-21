@@ -6,7 +6,8 @@
   revisions and reconstructible line patches; `--full` refreshes the baseline.
 - Keep snapshot refs bound to surviving DOM elements. Replaced elements cannot
   inherit old refs. Scope snapshots to the requested selector and active frame,
-  including selected roots and open shadow DOM.
+  including selected roots and open shadow DOM. Element counts also resolve refs
+  within the selected frame.
 - Add `screenshot --if-changed` with an optional changed-pixel fraction threshold.
   Isolate history by tab and capture mode; unchanged captures omit image output
   and leave the requested output file untouched.

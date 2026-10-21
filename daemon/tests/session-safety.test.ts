@@ -80,14 +80,14 @@ describe('session page safety', () => {
   it('keeps refs on surviving nodes and never retargets a replaced element', async () => {
     const first = await browser.getSnapshot({ interactive: true });
     const ref = Object.keys(first.refs)[0];
-    expect(await browser.getLocatorForRef(ref).count()).toBe(1);
+    expect(await executeCommand(browser, { id: 'count-live', action: 'count', selector: `@${ref}` })).toMatchObject({ ok: true, data: { count: 1 } });
     await browser.getPage().evaluate(() => document.body.append(document.createElement('p')));
     expect(Object.keys((await browser.getSnapshot({ interactive: true })).refs)).toContain(ref);
     await browser.getPage().evaluate(() => {
       const button = document.querySelector('button')!;
       button.replaceWith(button.cloneNode(true));
     });
-    expect(await browser.getLocatorForRef(ref).count()).toBe(0);
+    expect(await executeCommand(browser, { id: 'count-detached', action: 'count', selector: `@${ref}` })).toMatchObject({ ok: true, data: { count: 0 } });
     const fresh = await browser.getSnapshot({ interactive: true });
     expect(Object.keys(fresh.refs)).not.toContain(ref);
   });
