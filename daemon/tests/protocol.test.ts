@@ -421,7 +421,7 @@ describe('current schema metadata and validation', () => {
     }
   });
   it('rejects invalid screenshot thresholds and accepts delta options', () => {
-    expect(parseCommand(JSON.stringify({ id: 'x', action: 'screenshot', threshold: 2 })).ok).toBe(false);
+    expect(parseCommand(JSON.stringify({ id: 'x', action: 'screenshot', threshold: 2 }))).toMatchObject({ ok: false, id: 'x' });
     expect(parseCommand(JSON.stringify({ id: 'x', action: 'snapshot', delta: true, full: true })).ok).toBe(true);
   });
 });

@@ -178,7 +178,7 @@ func TestFindSourceProjectDirFromPackageDir(t *testing.T) {
 }
 
 func TestLostDaemonResponseDoesNotRecommendRetryingMutations(t *testing.T) {
-	for _, action := range []string{"click", "launch", "evaluate", "unknown_action", "snapshot"} {
+	for _, action := range []string{"click", "fill", "launch", "evaluate", "console", "unknown_action", "snapshot"} {
 		t.Run(action, func(t *testing.T) {
 			dir, err := os.MkdirTemp("", "ca-")
 			if err != nil {
@@ -218,10 +218,16 @@ func TestLostDaemonResponseDoesNotRecommendRetryingMutations(t *testing.T) {
 					return
 				}
 				_, err = reader.ReadString('\n')
+				if err == nil && action == "fill" {
+					_, err = conn.Write([]byte("invalid-json\n"))
+				}
+				if err == nil && action == "launch" {
+					_, err = conn.Write([]byte(`{"id":"wrong-request","ok":true}` + "\n"))
+				}
 				done <- err
-				// Simulate execution followed by loss of the response.
+				// Simulate execution followed by a missing, invalid, or mismatched response.
 			}()
-			payload, _ := json.Marshal(map[string]interface{}{"id": "proof", "action": action})
+			payload, _ := json.Marshal(map[string]interface{}{"id": "proof", "action": action, "clear": action == "console"})
 			_, err = SendCommand(session, payload, time.Second)
 			if err == nil {
 				t.Fatal("expected lost response error")

@@ -60,6 +60,12 @@ try {
   check('extra stop arguments are rejected', () => {
     assert.equal(cli(['record', 'stop', 'extra']).status, 64);
   });
+  check('schema validation failures preserve request correlation', () => {
+    const result = cli([JSON.stringify({ id: 'invalid-schema', action: 'screenshot', threshold: 2 })]);
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stdout, '');
+    assert.equal(JSON.parse(result.stderr).error.code, 'command_failed');
+  });
   check('raw JSON and stdin preserve request identifiers', () => {
     const input = JSON.stringify({ id: 'audit-proof', action: 'runtime_status' });
     for (const response of [cli([input]), cli(['--input', 'json'], input)]) {

@@ -445,6 +445,7 @@ func commandIsReadOnly(payload []byte) bool {
 		Action    string `json:"action"`
 		DryRun    bool   `json:"dryRun"`
 		Subaction string `json:"subaction"`
+		Clear     bool   `json:"clear"`
 	}
 	if json.Unmarshal(payload, &command) != nil {
 		return false
@@ -453,8 +454,10 @@ func commandIsReadOnly(payload []byte) bool {
 		return true
 	}
 	switch command.Action {
-	case "schema", "runtime_status", "url", "title", "snapshot", "gettext", "innerhtml", "inputvalue", "getattribute", "isvisible", "isenabled", "ischecked", "count", "boundingbox", "styles", "tab_list", "cookies_get", "storage_get", "dialog_status", "requests", "request_detail", "console", "errors", "stealth_status", "profile_list", "webmcp_list":
+	case "schema", "runtime_status", "url", "title", "snapshot", "gettext", "innerhtml", "inputvalue", "getattribute", "isvisible", "isenabled", "ischecked", "count", "boundingbox", "styles", "tab_list", "cookies_get", "storage_get", "dialog_status", "requests", "request_detail", "stealth_status", "profile_list", "webmcp_list":
 		return true
+	case "console", "errors":
+		return !command.Clear
 	case "getbyrole", "getbytext", "getbylabel":
 		return command.Subaction == "" || command.Subaction == "count"
 	default:

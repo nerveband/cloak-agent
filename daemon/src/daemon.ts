@@ -256,7 +256,7 @@ export async function startDaemon(options?: DaemonOptions): Promise<void> {
         const parsed = parseCommand(line);
         if (!parsed.ok) {
           const fail = parsed as import('./protocol.js').ParseFailure;
-          const resp = errorResponse('unknown', fail.error);
+          const resp = errorResponse(fail.id ?? 'unknown', fail.error);
           socket.write(serializeResponse(resp) + '\n');
           continue;
         }

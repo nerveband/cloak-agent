@@ -353,6 +353,7 @@ export interface ParseSuccess {
 
 export interface ParseFailure {
   ok: false;
+  id?: string;
   error: string;
 }
 
@@ -383,7 +384,8 @@ export function parseCommand(input: string): ParseResult {
     const path = i.path.length > 0 ? i.path.join('.') + ': ' : '';
     return path + i.message;
   });
-  return { ok: false, error: messages.join('; ') };
+  const id = parsed && typeof parsed === 'object' && 'id' in parsed && typeof parsed.id === 'string' ? parsed.id : undefined;
+  return { ok: false, ...(id !== undefined && { id }), error: messages.join('; ') };
 }
 
 /**
@@ -482,7 +484,7 @@ function safetyMetadata(action: string): Record<string, boolean | string> {
     'trace_stop', 'recording_start', 'recording_restart', 'recording_stop', 'fingerprint_rotate',
     'profile_create', 'cdp', 'webmcp_call', 'evaluate', 'pushstate',
     'keyboard_type', 'keyboard_inserttext', 'frame', 'state_save',
-    'profiler_start', 'profiler_stop', 'screenshot', 'pdf',
+    'profiler_start', 'profiler_stop', 'screenshot', 'pdf', 'read', 'console', 'errors',
   ]);
   const destructive = new Set(['close', 'tab_close', 'cookies_clear', 'storage_clear', 'unroute', 'fingerprint_rotate']);
   const idempotent = new Set(['profile_create', 'profile_list', 'schema', 'url', 'title', 'snapshot', 'requests', 'console', 'errors']);
