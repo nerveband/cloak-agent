@@ -25,6 +25,21 @@ try {
     assert.equal(data(['schema', 'webmcp_list']).schema._meta.readonly, true);
     assert.equal(data(['schema', 'webmcp_call']).schema._meta.mutating, true);
   });
+  check('schema marks JavaScript, keyboard, profiler, and semantic operations mutating', () => {
+    for (const action of ['evaluate', 'keyboard_type', 'profiler_start', 'getbyrole']) {
+      assert.equal(data(['schema', action]).schema._meta.readonly, false);
+    }
+  });
+  check('incremental capture flags validate before execution', () => {
+    assert.equal(data(['--dry-run', 'snapshot', '--delta', '--full']).dryRun, true);
+    assert.equal(data(['--dry-run', 'screenshot', '--if-changed', '--threshold', '0.01']).dryRun, true);
+    for (const args of [['snapshot', '--unknown'], ['screenshot', '--if-changed', '--threshold', 'NaN'], ['screenshot', '--threshold', '0.1']]) {
+      const result = cli(args);
+      assert.equal(result.status, 64);
+      assert.equal(result.stdout, '');
+      assert.equal(JSON.parse(result.stderr).error.retryable, false);
+    }
+  });
   check('invalid CLI input fails with structured error on stderr', () => {
     const result = cli(['record', 'start', 'invalid.webm', '--fps', '0']);
     assert.equal(result.status, 64);

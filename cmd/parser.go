@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -174,22 +175,32 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 		m := map[string]interface{}{"action": "snapshot"}
 		for i := 0; i < len(rest); i++ {
 			switch rest[i] {
-			case "-i":
+			case "-i", "--interactive":
 				m["interactive"] = true
-			case "-c":
+			case "-c", "--compact":
 				m["compact"] = true
+			case "--delta":
+				m["delta"] = true
+			case "--full":
+				m["full"] = true
 			case "-d", "--max-depth":
-				if i+1 < len(rest) {
-					if n, err := strconv.Atoi(rest[i+1]); err == nil {
-						m["maxDepth"] = n
-					}
-					i++
+				if i+1 >= len(rest) {
+					return nil, fmt.Errorf("snapshot requires a depth")
 				}
-			case "-s":
-				if i+1 < len(rest) {
-					m["selector"] = rest[i+1]
-					i++
+				i++
+				n, err := strconv.Atoi(rest[i])
+				if err != nil || n < 0 {
+					return nil, fmt.Errorf("snapshot requires a nonnegative integer depth")
 				}
+				m["maxDepth"] = n
+			case "-s", "--selector":
+				if i+1 >= len(rest) || strings.HasPrefix(rest[i+1], "-") {
+					return nil, fmt.Errorf("snapshot requires a selector")
+				}
+				i++
+				m["selector"] = rest[i]
+			default:
+				return nil, fmt.Errorf("unknown snapshot argument: %s", rest[i])
 			}
 		}
 		return m, nil
@@ -400,9 +411,36 @@ func ParseArgs(args []string) (map[string]interface{}, error) {
 			switch rest[i] {
 			case "--full":
 				m["fullPage"] = true
+			case "--if-changed":
+				m["ifChanged"] = true
+			case "--threshold":
+				if i+1 >= len(rest) {
+					return nil, fmt.Errorf("screenshot requires a threshold")
+				}
+				i++
+				n, err := strconv.ParseFloat(rest[i], 64)
+				if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n < 0 || n > 1 {
+					return nil, fmt.Errorf("screenshot threshold requires a number from 0 to 1")
+				}
+				m["threshold"] = n
+			case "-s", "--selector":
+				if i+1 >= len(rest) || strings.HasPrefix(rest[i+1], "-") {
+					return nil, fmt.Errorf("screenshot requires a selector")
+				}
+				i++
+				m["selector"] = rest[i]
 			default:
+				if strings.HasPrefix(rest[i], "-") {
+					return nil, fmt.Errorf("unknown screenshot argument: %s", rest[i])
+				}
+				if _, exists := m["path"]; exists {
+					return nil, fmt.Errorf("screenshot accepts only one path")
+				}
 				m["path"] = rest[i]
 			}
+		}
+		if _, ok := m["threshold"]; ok && m["ifChanged"] != true {
+			return nil, fmt.Errorf("--threshold requires --if-changed")
 		}
 		return m, nil
 

@@ -186,15 +186,15 @@ func ValidateBundle(ctx context.Context, root, expected string) error {
 func bootstrap(ctx context.Context, root string) error {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		return fmt.Errorf("install Node.js 22+ first: %w", err)
+		return fmt.Errorf("install Node.js 22.12+ first: %w", err)
 	}
 	output, err := exec.CommandContext(ctx, node, "--version").Output()
 	if err != nil {
 		return err
 	}
-	var major int
-	if _, err = fmt.Sscanf(string(output), "v%d.", &major); err != nil || major < 22 {
-		return fmt.Errorf("cloak-agent requires Node.js 22 or newer")
+	var major, minor int
+	if _, err = fmt.Sscanf(string(output), "v%d.%d.", &major, &minor); err != nil || major < 22 || (major == 22 && minor < 12) {
+		return fmt.Errorf("cloak-agent requires Node.js 22.12 or newer")
 	}
 	npmCommand := exec.CommandContext(ctx, "npm", "ci", "--omit=dev", "--no-audit", "--no-fund")
 	if runtime.GOOS == "windows" {

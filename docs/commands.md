@@ -57,6 +57,8 @@ cloak-agent snapshot -i             # Interactive elements only (recommended)
 cloak-agent snapshot -c             # Compact output (fewer tokens)
 cloak-agent snapshot -d 3           # Limit depth to 3
 cloak-agent snapshot -s "#main"     # Scope to CSS selector
+cloak-agent snapshot -i --delta      # Full baseline, then changes only
+cloak-agent snapshot -i --delta --full # Refresh the baseline
 ```
 
 **Output:**
@@ -130,6 +132,8 @@ cloak-agent screenshot                 # Screenshot to stdout (base64)
 cloak-agent screenshot output.png      # Save to file
 cloak-agent screenshot --full          # Full page screenshot
 cloak-agent screenshot --full page.png # Full page to file
+cloak-agent screenshot out.png --if-changed # Save only when pixels change
+cloak-agent screenshot out.png --if-changed --threshold 0.01 # Allow 1% changed pixels
 cloak-agent pdf output.pdf             # Save page as PDF
 ```
 
@@ -375,3 +379,33 @@ echo '{"action":"navigate","url":"https://example.com"}' | cloak-agent --input j
 cloak-agent --input-file payload.json --output json
 cloak-agent --json '{"action":"snapshot","interactive":true}'   # legacy shorthand
 ```
+
+
+### Incremental captures
+
+`snapshot --delta` keeps a baseline for each active frame and option set. The
+first response includes `tree`, `revision`, and `baseline: true`. An unchanged
+response includes `unchanged: true` and the same revision. Changed responses
+include `baseRevision` and `delta: {start, deleteCount, lines}`. Apply that splice
+to the previous tree's newline-separated lines. `start` is zero-based. `--full`
+returns a fresh full baseline. Navigation, tab changes, and frame changes reset
+refs and require a fresh baseline. History retains at most sixteen option sets.
+
+Refs keep their identity while the same DOM element survives. A detached or
+replaced element cannot receive actions through its old ref. Each snapshot makes
+only the refs in that snapshot available for subsequent actions. Re-snapshot
+before acting on a changed page.
+
+`screenshot --if-changed` compares decoded PNG pixels against the last image
+returned for that tab and selector/full-page mode. `--threshold` accepts a changed
+pixel fraction from zero to one, with zero as the default. Dimensions changing
+always produces a new image. An unchanged result returns `changed: false` and
+`difference`, with no `path` or `base64`, and does not touch the requested file.
+A failed write does not replace the comparison baseline. JPEG conditional
+captures are rejected. History retains at most sixteen capture modes and 64 MiB of decoded pixels per
+tab. A larger image is returned without retaining a comparison baseline.
+
+If a mutating command's response is lost or invalid, the CLI reports
+`outcome_unknown` and `retryable: false`. Inspect the page or session before
+retrying because the original action may already have completed. The CLI does
+not resend the action.

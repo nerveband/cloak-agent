@@ -1,3 +1,5 @@
+import { selectors, type Page, type Frame, type JSHandle } from 'playwright-core';
+
 // ARIA snapshot engine — parses Playwright's accessibility tree and assigns
 // @ref IDs to interactive elements so AI agents can target them with minimal tokens.
 
@@ -13,6 +15,7 @@ export interface RefData {
 }
 
 export interface SnapshotOptions {
+  selector?: string;
   interactive?: boolean;
   compact?: boolean;
   maxDepth?: number;
@@ -307,12 +310,61 @@ export function getSnapshotStats(
 // Enhanced snapshot (requires a Playwright Page)
 // ---------------------------------------------------------------------------
 
+// The selector engine owns refs in Playwright's isolated world. Page scripts
+// cannot enumerate or rewrite its registry.
+await selectors.register('cloakref', () => {
+  const elements = new Map<string, Element>();
+  const query = (root: Node, selector: string): Element | null => {
+    if (selector.startsWith('bind:') && root.nodeType === 1) {
+      for (const [id, element] of elements) {
+        if (!element.isConnected) elements.delete(id);
+      }
+      elements.set(selector.slice(5), root as Element);
+      return root as Element;
+    }
+    const element = elements.get(selector);
+    return element?.isConnected && (root.nodeType === 9 ? element.ownerDocument === root : root.contains(element)) ? element : null;
+  };
+  return { query, queryAll(root: Node, selector: string) {
+    const element = query(root, selector);
+    return element ? [element] : [];
+  } };
+}, { contentScript: true });
+
+const identities = new WeakMap<Page | Frame, { generation: number; handle: JSHandle<WeakMap<Element, string>> }>();
+
 export async function getEnhancedSnapshot(
-  page: { locator: (sel: string) => { ariaSnapshot: () => Promise<string> } },
+  page: Page | Frame,
   options: SnapshotOptions = {},
+  generation = 0,
 ): Promise<{ tree: string; refs: Record<string, RefData> }> {
-  const ariaTree = await page.locator(':root').ariaSnapshot();
+  let identity = identities.get(page);
+  if (!identity || identity.generation !== generation) {
+    await identity?.handle.dispose();
+    identity = { generation, handle: await page.evaluateHandle(() => new WeakMap<Element, string>()) };
+    identities.set(page, identity);
+  }
+  const scope = page.locator(options.selector ?? ':root');
+  const ariaTree = await scope.ariaSnapshot();
+  const temporary: Record<string, RefData> = {};
+  let tree = processAriaTree(ariaTree, temporary, options);
   const refs: Record<string, RefData> = {};
-  const tree = processAriaTree(ariaTree, refs, options);
-  return { tree, refs };
+  for (const [candidate, data] of Object.entries(temporary)) {
+    let locator = scope.getByRole(data.role as any, data.name !== undefined ? { name: data.name, exact: true } : undefined);
+    // A selected root can itself be interactive.
+    locator = scope.and(page.getByRole(data.role as any, data.name !== undefined ? { name: data.name, exact: true } : undefined)).or(locator);
+    if (data.nth !== undefined) locator = locator.nth(data.nth - 1);
+    const ref = await locator.evaluate((element, { ids, proposed }) => {
+      let id = ids.get(element);
+      if (!id) {
+        id = proposed;
+        ids.set(element, id);
+      }
+      return id;
+    }, { ids: identity.handle, proposed: candidate });
+    await locator.locator(`cloakref=bind:${ref}`).count();
+    refs[ref] = data;
+    tree = tree.replace(`[ref=${candidate}]`, `[stable-ref=${ref}]`);
+  }
+  return { tree: tree.replaceAll('[stable-ref=', '[ref='), refs };
 }

@@ -1,11 +1,17 @@
 package cmd
 
 import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGetAppDir(t *testing.T) {
@@ -168,5 +174,69 @@ func TestFindSourceProjectDirFromPackageDir(t *testing.T) {
 	}
 	if !fileExists(filepath.Join(got, "daemon", "package.json")) {
 		t.Fatalf("expected daemon/package.json at %s", got)
+	}
+}
+
+func TestLostDaemonResponseDoesNotRecommendRetryingMutations(t *testing.T) {
+	for _, action := range []string{"click", "launch", "evaluate", "unknown_action", "snapshot"} {
+		t.Run(action, func(t *testing.T) {
+			dir, err := os.MkdirTemp("", "ca-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(dir)
+			t.Setenv("CLOAK_AGENT_SOCKET_DIR", dir)
+			session := "lost-" + action
+			network := "unix"
+			if runtime.GOOS == "windows" {
+				network = "tcp"
+			}
+			listener, err := net.Listen(network, GetSocketPath(session))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			if err = os.WriteFile(GetPidFile(session), []byte(fmt.Sprint(os.Getpid())), 0600); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					done <- err
+					return
+				}
+				defer conn.Close()
+				reader := bufio.NewReader(conn)
+				if _, err = reader.ReadString('\n'); err != nil {
+					done <- err
+					return
+				}
+				raw, _ := json.Marshal(map[string]interface{}{"id": "_version", "ok": true, "data": map[string]string{"version": Version}})
+				if _, err = conn.Write(append(raw, '\n')); err != nil {
+					done <- err
+					return
+				}
+				_, err = reader.ReadString('\n')
+				done <- err
+				// Simulate execution followed by loss of the response.
+			}()
+			payload, _ := json.Marshal(map[string]interface{}{"id": "proof", "action": action})
+			_, err = SendCommand(session, payload, time.Second)
+			if err == nil {
+				t.Fatal("expected lost response error")
+			}
+			var cliErr *CLIError
+			if action == "snapshot" {
+				if errors.As(err, &cliErr) && cliErr.Code == "outcome_unknown" {
+					t.Fatal("read-only request marked mutating")
+				}
+			} else if !errors.As(err, &cliErr) || cliErr.Code != "outcome_unknown" || cliErr.Retry {
+				t.Fatalf("unsafe retry advice: %v", err)
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

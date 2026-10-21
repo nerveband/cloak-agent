@@ -16,7 +16,7 @@ const modifiers = z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).optional(
 const buttonEnum = z.enum(['left', 'right', 'middle']).optional();
 const positionObj = z.object({ x: z.number(), y: z.number() }).optional();
 const viewportObj = z.object({ width: z.number(), height: z.number() });
-const looseRecord = z.record(z.unknown());
+const looseRecord = z.record(z.string(), z.unknown());
 const semanticSubactionEnum = z.enum([
   'count',
   'click',
@@ -126,7 +126,9 @@ const snapshot = z.object({
   ...base,
   action: z.literal('snapshot'),
   interactive: z.boolean().optional(),
-  maxDepth: z.number().optional(),
+  maxDepth: z.number().int().nonnegative().optional(),
+  delta: z.boolean().optional(),
+  full: z.boolean().optional(),
   compact: z.boolean().optional(),
   selector: z.string().optional(),
 });
@@ -135,6 +137,8 @@ const snapshot = z.object({
 const screenshot = z.object({
   ...base,
   action: z.literal('screenshot'),
+  ifChanged: z.boolean().optional(),
+  threshold: z.number().min(0).max(1).optional(),
   selector: z.string().optional(),
   fullPage: z.boolean().optional(),
   path: z.string().optional(),
@@ -220,7 +224,7 @@ const request_detail = z.object({ ...base, action: z.literal('request_detail'), 
 const viewport = z.object({ ...base, action: z.literal('viewport'), width: z.number(), height: z.number() });
 const device = z.object({ ...base, action: z.literal('device'), name: z.string() });
 const geolocation = z.object({ ...base, action: z.literal('geolocation'), latitude: z.number(), longitude: z.number(), accuracy: z.number().optional() });
-const headers = z.object({ ...base, action: z.literal('headers'), headers: z.record(z.string()) });
+const headers = z.object({ ...base, action: z.literal('headers'), headers: z.record(z.string(), z.string()) });
 const credentials = z.object({ ...base, action: z.literal('credentials'), username: z.string(), password: z.string() });
 const offline = z.object({ ...base, action: z.literal('offline'), enabled: z.boolean() });
 const emulatemedia = z.object({ ...base, action: z.literal('emulatemedia'), media: z.enum(['screen', 'print', 'null']).optional(), colorScheme: z.enum(['light', 'dark', 'no-preference', 'null']).optional() });
@@ -320,9 +324,7 @@ export const CommandSchema = z.discriminatedUnion('action', [...allSchemas]);
 const schemaMap: Record<string, z.ZodObject<any>> = {};
 for (const s of allSchemas) {
   const actionLiteral = (s.shape as any).action;
-  if (actionLiteral && '_def' in actionLiteral && actionLiteral._def.value) {
-    schemaMap[actionLiteral._def.value] = s as z.ZodObject<any>;
-  }
+  schemaMap[actionLiteral.value] = s as z.ZodObject<any>;
 }
 
 // ---------------------------------------------------------------------------
@@ -415,10 +417,10 @@ export function serializeResponse(response: Response): string {
 function describeType(zodType: z.ZodTypeAny): { type: string; values?: string[] } {
   // Unwrap optionals / defaults
   if (zodType instanceof z.ZodOptional || zodType instanceof z.ZodDefault) {
-    return describeType((zodType as any)._def.innerType);
+    return describeType(zodType.unwrap() as z.ZodType);
   }
   if (zodType instanceof z.ZodNullable) {
-    return describeType((zodType as any)._def.innerType);
+    return describeType(zodType.unwrap() as z.ZodType);
   }
 
   if (zodType instanceof z.ZodString) return { type: 'string' };
@@ -426,7 +428,7 @@ function describeType(zodType: z.ZodTypeAny): { type: string; values?: string[] 
   if (zodType instanceof z.ZodBoolean) return { type: 'boolean' };
   if (zodType instanceof z.ZodLiteral) return { type: 'string' }; // action literals
   if (zodType instanceof z.ZodEnum) {
-    return { type: 'enum', values: (zodType as any)._def.values as string[] };
+    return { type: 'enum', values: zodType.options as string[] };
   }
   if (zodType instanceof z.ZodArray) return { type: 'array' };
   if (zodType instanceof z.ZodObject) return { type: 'object' };
@@ -478,15 +480,17 @@ function safetyMetadata(action: string): Record<string, boolean | string> {
     'unroute', 'viewport', 'device', 'geolocation', 'headers', 'credentials',
     'offline', 'emulatemedia', 'state_load', 'highlight', 'trace_start',
     'trace_stop', 'recording_start', 'recording_restart', 'recording_stop', 'fingerprint_rotate',
-    'profile_create', 'cdp', 'webmcp_call',
+    'profile_create', 'cdp', 'webmcp_call', 'evaluate', 'pushstate',
+    'keyboard_type', 'keyboard_inserttext', 'frame', 'state_save',
+    'profiler_start', 'profiler_stop', 'screenshot', 'pdf',
   ]);
   const destructive = new Set(['close', 'tab_close', 'cookies_clear', 'storage_clear', 'unroute', 'fingerprint_rotate']);
   const idempotent = new Set(['profile_create', 'profile_list', 'schema', 'url', 'title', 'snapshot', 'requests', 'console', 'errors']);
   return {
-    readonly: !mutating.has(action),
-    mutating: mutating.has(action),
+    readonly: !mutating.has(action) && !action.startsWith('getby'),
+    mutating: mutating.has(action) || action.startsWith('getby'),
     destructive: destructive.has(action),
-    idempotent: idempotent.has(action) || !mutating.has(action),
+    idempotent: idempotent.has(action) || (!mutating.has(action) && !action.startsWith('getby')),
     supportsDryRun: true,
   };
 }

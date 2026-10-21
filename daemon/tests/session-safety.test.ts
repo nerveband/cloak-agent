@@ -11,8 +11,8 @@ describe('session page safety', () => {
     await browser.getContext().route('https://review.invalid/**', route => route.fulfill({ contentType: 'text/html', body:
       '<button style="position:absolute;left:0;top:0;width:100px;height:60px" onclick="document.body.dataset.clicked=1">Same</button>' }));
     await browser.getPage().goto('https://review.invalid/');
-  });
-  afterEach(async () => { await browser.close(); });
+  }, 60000);
+  afterEach(async () => { await browser.close(); }, 60000);
 
   it('rejects refs on tab creation, switching, closing, and navigation', async () => {
     const first = browser.getPage();
@@ -69,4 +69,71 @@ describe('session page safety', () => {
     expect(timed.ok).toBe(false);
     if (!timed.ok) expect(timed.error).toContain('timed out');
   });
+  it('keeps refs on surviving nodes and never retargets a replaced element', async () => {
+    const first = await browser.getSnapshot({ interactive: true });
+    const ref = Object.keys(first.refs)[0];
+    await browser.getPage().evaluate(() => document.body.append(document.createElement('p')));
+    expect(Object.keys((await browser.getSnapshot({ interactive: true })).refs)).toContain(ref);
+    await browser.getPage().evaluate(() => {
+      const button = document.querySelector('button')!;
+      button.replaceWith(button.cloneNode(true));
+    });
+    expect(await browser.getLocatorForRef(ref).count()).toBe(0);
+    const fresh = await browser.getSnapshot({ interactive: true });
+    expect(Object.keys(fresh.refs)).not.toContain(ref);
+  });
+
+  it('scopes snapshots to the selected root including shadow content', async () => {
+    await browser.getPage().setContent('<button>Outside</button><main id="scope"><div><button>Inside</button></div><x-test></x-test></main>');
+    await browser.getPage().evaluate(() => document.querySelector('x-test')!.attachShadow({ mode: 'open' }).innerHTML = '<button>Shadow</button>');
+    const result = await browser.getSnapshot({ selector: '#scope', interactive: true });
+    expect(result.tree).not.toContain('Outside');
+    expect(result.tree.match(/Inside/g)).toHaveLength(1);
+    expect(result.tree.match(/Shadow/g)).toHaveLength(1);
+    const shadowRef = Object.entries(result.refs).find(([, data]) => data.name === 'Shadow')![0];
+    expect(await browser.getLocatorForRef(shadowRef).count()).toBe(1);
+    const root = await browser.getSnapshot({ selector: '#scope > div > button', interactive: true });
+    expect(root.tree).toContain('Inside');
+    expect(Object.keys(root.refs)).toHaveLength(1);
+  });
+
+  it('returns a delta baseline, unchanged revision, reconstructible patch, and forced full tree', async () => {
+    const capture = async (extra = {}) => {
+      const result = await executeCommand(browser, { id: 'delta', action: 'snapshot', interactive: true, delta: true, ...extra });
+      if (!result.ok) throw new Error(result.error);
+      return result.data as any;
+    };
+    const baseline = await capture();
+    expect(baseline.baseline).toBe(true);
+    const unchanged = await capture();
+    expect(unchanged.unchanged).toBe(true);
+    expect(unchanged.revision).toBe(baseline.revision);
+    expect(unchanged.tree).toBeUndefined();
+    await browser.getPage().evaluate(() => document.querySelector('button')!.textContent = 'Changed');
+    const changed = await capture();
+    const lines = baseline.tree.split('\n');
+    lines.splice(changed.delta.start, changed.delta.deleteCount, ...changed.delta.lines);
+    expect(lines.join('\n')).toBe((await browser.getSnapshot({ interactive: true })).tree);
+    expect((await capture({ full: true })).baseline).toBe(true);
+    await browser.getPage().goto('https://review.invalid/next');
+    expect((await capture()).baseline).toBe(true);
+  });
+
+  it('skips unchanged screenshots without writing a file and isolates capture modes and tabs', async () => {
+    const capture = async (extra = {}) => {
+      const result = await executeCommand(browser, { id: 'image', action: 'screenshot', ifChanged: true, ...extra });
+      if (!result.ok) throw new Error(result.error);
+      return result.data as any;
+    };
+    expect((await capture()).changed).toBe(true);
+    const same = await capture({ path: '/missing-directory/should-not-be-written.png' });
+    expect(same).toEqual({ changed: false, difference: 0 });
+    expect((await capture({ fullPage: true })).changed).toBe(true);
+    await browser.getPage().evaluate(() => document.body.style.background = 'red');
+    expect((await capture({ threshold: 1 })).changed).toBe(false);
+    expect((await capture()).changed).toBe(true);
+    await browser.newTab('https://review.invalid/second');
+    expect((await capture()).changed).toBe(true);
+  });
+
 });

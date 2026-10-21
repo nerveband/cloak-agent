@@ -29,8 +29,8 @@ The daemon uses CloakBrowser's patched Chromium binary. Fingerprints (GPU, scree
 
 ### Prerequisites
 
-- Go 1.22+
-- Node.js 22+
+- Go 1.26.10+
+- Node.js 22.12+
 - npm
 
 ### From source
@@ -79,9 +79,9 @@ profiles and config roots removed as well.
 
 Current runtime baseline (locked in `daemon/package-lock.json`):
 
-- `cloakbrowser` `0.5.10` for the patched Chromium runtime and stable/preview release channels.
-- `playwright-core` `1.62.1` for browser control.
-- `ws` `8.21.2` for the optional CDP-backed local viewport stream server.
+- `cloakbrowser` `0.6.3` for the patched Chromium runtime and stable/preview release channels.
+- `playwright-core` `1.64.1` for browser control.
+- `ws` `8.22.0` for the optional CDP-backed local viewport stream server.
 
 Keyless installs use Chromium `146.0.7680.177.5` on Linux x64 and
 `145.0.7632.109.2` on macOS. A CloakBrowser key selects the current licensed

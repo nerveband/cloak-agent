@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,7 +17,7 @@ import (
 	"github.com/nerveband/cloak-agent/cmd/update"
 )
 
-var Version = "0.5.1"
+var Version = "0.6.0"
 
 func Execute(args []string) error {
 	if handled, err := dispatchInstalled(args); handled || err != nil {
@@ -174,7 +175,9 @@ func Execute(args []string) error {
 
 	respBytes, err := SendCommand(flags.Session, jsonBytes, timeout)
 	if err != nil {
-		if pendingTailgateRoute != "" {
+		var cliErr *CLIError
+		outcomeUnknown := errors.As(err, &cliErr) && cliErr.Code == "outcome_unknown"
+		if pendingTailgateRoute != "" && !outcomeUnknown {
 			_ = releaseTailgateSession(flags.Session, pendingTailgateRoute)
 		}
 		return fmt.Errorf("failed to send command: %w", err)
@@ -517,9 +520,9 @@ func handleDoctor(flags GlobalFlags) error {
 		output, err := exec.CommandContext(ctx, nodePath, "--version").Output()
 		cancel()
 		nodeVersion = strings.TrimSpace(string(output))
-		var major int
-		if _, scanErr := fmt.Sscanf(nodeVersion, "v%d.", &major); err == nil && scanErr == nil {
-			nodeSupported = major >= 22
+		var major, minor int
+		if _, scanErr := fmt.Sscanf(nodeVersion, "v%d.%d.", &major, &minor); err == nil && scanErr == nil {
+			nodeSupported = major > 22 || (major == 22 && minor >= 12)
 		}
 	}
 	if daemonDir != "" {
@@ -648,10 +651,13 @@ Interaction:
 Inspection:
   snapshot [-i] [-c] [-d N]      Get page structure with @refs
   snapshot --max-depth N         Alias for snapshot -d N
+  snapshot --delta [--full]      Return baseline, unchanged revision, or line patch
   read [url]                     Read agent-friendly rendered page text
   get title|url|text|html|value  Get page/element info
   get styles <ref>               Get computed styles
   screenshot [path] [--full]     Take screenshot
+  screenshot --if-changed       Skip unchanged PNG captures
+    [--threshold 0..1]          Allow a fraction of changed pixels
   is visible|enabled|checked     Check element state
 
 Daemon / sessions:

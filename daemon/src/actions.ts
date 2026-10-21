@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import fs from 'node:fs/promises';
+import { PNG } from 'pngjs';
 import type { Page, Frame, BrowserContext, Locator } from 'playwright-core';
 import { devices } from 'playwright-core';
 
@@ -20,6 +21,9 @@ import {
   semanticActionLabel,
   semanticSubactionNeedsValue,
 } from './semantic-actions.js';
+
+const snapshotHistory = new WeakMap<Frame, Map<string, { tree: string; revision: number; generation: number }>>();
+const screenshotHistory = new WeakMap<Page, Map<string, PNG>>();
 
 const daemonVersion = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8')).version as string;
 
@@ -363,14 +367,40 @@ export async function executeCommand(
 
       case 'snapshot': {
         if (command.dryRun) return dryRun(id, 'Capture accessibility snapshot of current page');
-        const opts: { interactive?: boolean; maxDepth?: number; compact?: boolean; selector?: string } = {};
-        if (command.interactive !== undefined) opts.interactive = command.interactive;
-        if (command.maxDepth !== undefined) opts.maxDepth = command.maxDepth;
-        if (command.compact !== undefined) opts.compact = command.compact;
-        if (command.selector) opts.selector = command.selector;
+        const opts = {
+          interactive: command.interactive,
+          maxDepth: command.maxDepth,
+          compact: command.compact,
+          selector: command.selector,
+        };
+        const frame = browser.getFrame();
         const { tree, refs } = await browser.getSnapshot(opts);
         const stats = getSnapshotStats(tree, refs);
-        return successResponse(id, { tree, stats });
+        if (!command.delta && !command.full) return successResponse(id, { tree, stats });
+        const key = JSON.stringify(opts);
+        const history = snapshotHistory.get(frame) ?? new Map();
+        snapshotHistory.set(frame, history);
+        const previous = history.get(key);
+        const generation = browser.getSnapshotGeneration();
+        const baseline = command.full || !previous || previous.generation !== generation;
+        const unchanged = !baseline && previous.tree === tree;
+        const revision = previous ? previous.revision + (unchanged ? 0 : 1) : 1;
+        if (baseline) {
+          history.delete(key);
+          history.set(key, { tree, revision, generation });
+          if (history.size > 16) history.delete(history.keys().next().value!);
+          return successResponse(id, { tree, stats, revision, baseline: true, unchanged: false });
+        }
+        if (unchanged) return successResponse(id, { revision, unchanged: true, stats });
+        const before = previous.tree.split('\n');
+        const after = tree.split('\n');
+        let start = 0;
+        while (start < before.length && start < after.length && before[start] === after[start]) start++;
+        let end = 0;
+        while (end < before.length - start && end < after.length - start && before[before.length - end - 1] === after[after.length - end - 1]) end++;
+        history.set(key, { tree, revision, generation });
+        return successResponse(id, { revision, baseRevision: previous.revision, unchanged: false, stats,
+          delta: { start, deleteCount: before.length - start - end, lines: after.slice(start, after.length - end) } });
       }
 
       // =====================================================================
@@ -384,38 +414,58 @@ export async function executeCommand(
             `Take screenshot${command.path ? ` and save to ${command.path}` : ' (base64)'}`,
           );
         }
+        if (command.threshold !== undefined && !command.ifChanged) throw new Error('threshold requires ifChanged');
+        if (command.ifChanged && command.type === 'jpeg') throw new Error('ifChanged requires PNG captures');
         const page = browser.getPage();
         const opts: Record<string, unknown> = {};
         if (command.fullPage !== undefined) opts.fullPage = command.fullPage;
         if (command.type) opts.type = command.type;
         if (command.quality !== undefined) opts.quality = command.quality;
-
-        if (command.selector) {
-          const loc = resolveLocator(command.selector, browser, page);
-          if (command.path) {
-            const validPath = validateFilePath(command.path);
-            opts.path = validPath;
-            await loc.screenshot(opts);
-            return successResponse(id, { path: validPath });
-          }
-          const buffer = await loc.screenshot(opts);
-          return successResponse(id, {
-            base64: buffer.toString('base64'),
-            type: command.type ?? 'png',
-          });
-        }
-
-        if (command.path) {
-          const validPath = validateFilePath(command.path);
-          opts.path = validPath;
-          await page.screenshot(opts);
+        const validPath = command.path ? validateFilePath(command.path) : undefined;
+        if (command.ifChanged && validPath && !validPath.toLowerCase().endsWith('.png')) throw new Error('ifChanged requires a .png output path');
+        const target = command.selector ? resolveLocator(command.selector, browser, page) : page;
+        if (!command.ifChanged && validPath) {
+          await target.screenshot({ ...opts, path: validPath });
           return successResponse(id, { path: validPath });
         }
-        const buffer = await page.screenshot(opts);
-        return successResponse(id, {
-          base64: buffer.toString('base64'),
-          type: command.type ?? 'png',
-        });
+        const buffer = await target.screenshot(opts);
+        let commit: (() => void) | undefined;
+        let comparison: Record<string, unknown> = {};
+        if (command.ifChanged) {
+          const image = PNG.sync.read(buffer);
+          const history = screenshotHistory.get(page) ?? new Map<string, PNG>();
+          screenshotHistory.set(page, history);
+          const key = JSON.stringify([command.selector ?? null, command.fullPage ?? false]);
+          const previous = history.get(key);
+          let difference = 1;
+          if (previous && previous.width === image.width && previous.height === image.height) {
+            let changed = 0;
+            for (let i = 0; i < image.data.length; i += 4) {
+              if (image.data[i] !== previous.data[i] || image.data[i + 1] !== previous.data[i + 1] || image.data[i + 2] !== previous.data[i + 2] || image.data[i + 3] !== previous.data[i + 3]) changed++;
+            }
+            difference = changed / (image.width * image.height);
+            if (difference <= (command.threshold ?? 0)) return successResponse(id, { changed: false, difference });
+          }
+          comparison = { changed: true, difference };
+          commit = () => {
+            history.delete(key);
+            history.set(key, image);
+            let bytes = 0;
+            for (const cached of [...history.values()].reverse()) bytes += cached.data.length;
+            while (history.size > 16 || bytes > 64 * 1024 * 1024) {
+              const oldest = history.keys().next().value!;
+              bytes -= history.get(oldest)!.data.length;
+              history.delete(oldest);
+            }
+          };
+        }
+        if (validPath) {
+          await fs.writeFile(validPath, buffer);
+          commit?.();
+          return successResponse(id, { path: validPath, ...comparison });
+        }
+        commit?.();
+        return successResponse(id, { base64: buffer.toString('base64'), type: command.type ?? 'png', ...comparison });
       }
 
       case 'pdf': {

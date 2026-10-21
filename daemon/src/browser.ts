@@ -101,6 +101,7 @@ export class BrowserManager {
   private lastSnapshot: string = '';
   private snapshotPage: Page | null = null;
   private snapshotGeneration = 0;
+  private snapshotFrame: Frame | null = null;
   private consoleMessages: Array<{ type: string; text: string }> = [];
   private pageErrors: string[] = [];
   private trackedRequests: TrackedRequest[] = [];
@@ -131,6 +132,10 @@ export class BrowserManager {
   resolveRef(ref: string): RefData | null {
     if (!this.snapshotPage || this.snapshotPage.isClosed() || this.snapshotPage !== this.pages[this.activePageIndex]) return null;
     return this.refMap[ref] ?? null;
+  }
+
+  getSnapshotGeneration(): number {
+    return this.snapshotGeneration;
   }
 
   getRefMap(): Record<string, RefData> {
@@ -280,7 +285,7 @@ export class BrowserManager {
     // next click honest instead of binding the ref to whatever now matches the
     // old role and name.
     page.on('framenavigated', (frame) => {
-      if (page === this.pages[this.activePageIndex] && frame === page.mainFrame()) {
+      if (page === this.pages[this.activePageIndex] && (frame === page.mainFrame() || frame === this.snapshotFrame)) {
         this.invalidateSnapshotState();
       }
     });
@@ -323,6 +328,7 @@ export class BrowserManager {
   invalidateSnapshotState(): void {
     this.snapshotGeneration++;
     this.snapshotPage = null;
+    this.snapshotFrame = null;
     this.refMap = {};
     this.lastSnapshot = '';
     this.activeFrame = null;
@@ -370,6 +376,7 @@ export class BrowserManager {
   }
 
   setActiveFrame(frame: Frame | null): void {
+    if (this.activeFrame !== frame) this.invalidateSnapshotState();
     this.activeFrame = frame;
   }
 
@@ -380,11 +387,13 @@ export class BrowserManager {
   ): Promise<{ tree: string; refs: Record<string, RefData> }> {
     const page = this.getPage();
     const generation = this.snapshotGeneration;
-    const result = await getEnhancedSnapshot(page, options);
+    const frame = this.getFrame();
+    const result = await getEnhancedSnapshot(frame, options, generation);
     if (page.isClosed() || page !== this.getPage() || generation !== this.snapshotGeneration) {
       throw new Error('Page changed during snapshot. Run snapshot again.');
     }
     this.snapshotPage = page;
+    this.snapshotFrame = frame;
     this.refMap = result.refs;
     this.lastSnapshot = result.tree;
     return result;
@@ -398,14 +407,7 @@ export class BrowserManager {
       throw new Error(`Unknown ref "${ref}". Run 'snapshot' to get updated refs.`);
     }
 
-    const page = this.getPage();
-    let locator = page.getByRole(data.role as any, data.name ? { name: data.name, exact: true } : undefined);
-
-    if (data.nth !== undefined) {
-      locator = locator.nth(data.nth - 1); // nth in refMap is 1-based, Playwright .nth() is 0-based
-    }
-
-    return locator;
+    return (this.snapshotFrame ?? this.getFrame()).locator(`cloakref=${ref}`);
   }
 
   // ── Tab management ──────────────────────────────────────────────────────

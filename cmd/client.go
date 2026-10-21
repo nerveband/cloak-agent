@@ -277,7 +277,7 @@ func StartDaemon(session string) error {
 
 	nodePath, err := exec.LookPath("node")
 	if err != nil {
-		return fmt.Errorf("node not found in PATH; install Node.js 22+ to run cloak-agent")
+		return fmt.Errorf("node not found in PATH; install Node.js 22.12+ to run cloak-agent")
 	}
 
 	cmd := exec.Command(nodePath, daemonJS)
@@ -375,18 +375,25 @@ func SendCommand(session string, command []byte, timeout time.Duration) ([]byte,
 		return nil, err
 	}
 	reader := bufio.NewReader(conn)
-	exchange := func(payload []byte) ([]byte, error) {
-		if _, err := conn.Write(append(payload, '\n')); err != nil {
+	exchange := func(payload []byte, userCommand bool) ([]byte, error) {
+		sent, writeErr := conn.Write(append(payload, '\n'))
+		failure := func(err error) ([]byte, error) {
+			if userCommand && sent > 0 && !commandIsReadOnly(command) {
+				return nil, NewCLIError("outcome_unknown", "The daemon response was lost after the command was sent: "+err.Error(), "Inspect the page or session before retrying. The command may already have completed.", false, ExitDaemon)
+			}
 			return nil, err
+		}
+		if writeErr != nil {
+			return failure(writeErr)
 		}
 		var response []byte
 		for {
 			part, more, err := reader.ReadLine()
 			if err != nil {
-				return nil, err
+				return failure(err)
 			}
 			if len(response)+len(part) > 8<<20 {
-				return nil, fmt.Errorf("daemon response exceeds 8 MiB")
+				return failure(fmt.Errorf("daemon response exceeds 8 MiB"))
 			}
 			response = append(response, part...)
 			if !more {
@@ -394,7 +401,7 @@ func SendCommand(session string, command []byte, timeout time.Duration) ([]byte,
 			}
 		}
 	}
-	status, err := exchange([]byte(`{"id":"_version","action":"runtime_status"}`))
+	status, err := exchange([]byte(`{"id":"_version","action":"runtime_status"}`), false)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +415,49 @@ func SendCommand(session string, command []byte, timeout time.Duration) ([]byte,
 		return nil, err
 	}
 	if !handshake.OK || (Version != "dev" && handshake.Data.Version != Version) {
-		return nil, fmt.Errorf("session %q uses an incompatible daemon (%s; CLI %s). Use a new --session or explicitly restart this session; existing work was not stopped", session, handshake.Data.Version, Version)
+		return nil, NewCLIError("daemon_version_mismatch", fmt.Sprintf("session %q uses an incompatible daemon (%s; CLI %s)", session, handshake.Data.Version, Version), "Use a new --session or explicitly restart this session; existing work was not stopped.", false, ExitDaemon)
 	}
-	return exchange(command)
+	response, err := exchange(command, true)
+	if err != nil {
+		return nil, err
+	}
+	var envelope struct {
+		ID      string `json:"id"`
+		OK      *bool  `json:"ok"`
+		Success *bool  `json:"success"`
+	}
+	var request struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(command, &request)
+	if err := json.Unmarshal(response, &envelope); err != nil || envelope.ID != request.ID || (envelope.OK == nil && envelope.Success == nil) {
+		if !commandIsReadOnly(command) {
+			return nil, NewCLIError("outcome_unknown", "The daemon returned an invalid or mismatched response after the command was sent.", "Inspect the page or session before retrying. The command may already have completed.", false, ExitDaemon)
+		}
+		return nil, fmt.Errorf("invalid or mismatched response from daemon")
+	}
+	return response, nil
+}
+
+// Unknown actions are treated as mutating when deciding whether retry advice is safe.
+func commandIsReadOnly(payload []byte) bool {
+	var command struct {
+		Action    string `json:"action"`
+		DryRun    bool   `json:"dryRun"`
+		Subaction string `json:"subaction"`
+	}
+	if json.Unmarshal(payload, &command) != nil {
+		return false
+	}
+	if command.DryRun {
+		return true
+	}
+	switch command.Action {
+	case "schema", "runtime_status", "url", "title", "snapshot", "gettext", "innerhtml", "inputvalue", "getattribute", "isvisible", "isenabled", "ischecked", "count", "boundingbox", "styles", "tab_list", "cookies_get", "storage_get", "dialog_status", "requests", "request_detail", "console", "errors", "stealth_status", "profile_list", "webmcp_list":
+		return true
+	case "getbyrole", "getbytext", "getbylabel":
+		return command.Subaction == "" || command.Subaction == "count"
+	default:
+		return false
+	}
 }

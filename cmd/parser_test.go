@@ -882,3 +882,23 @@ func TestWebMCPRejectsInvalidArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotAndConditionalScreenshotOptions(t *testing.T) {
+	snapshot, err := ParseArgs([]string{"snapshot", "--delta", "--full", "--selector", "#main"})
+	if err != nil || snapshot["delta"] != true || snapshot["full"] != true || snapshot["selector"] != "#main" {
+		t.Fatalf("unexpected snapshot: %#v %v", snapshot, err)
+	}
+	shot, err := ParseArgs([]string{"screenshot", "out.png", "--if-changed", "--threshold", "0.01", "-s", "main"})
+	if err != nil || shot["ifChanged"] != true || shot["threshold"] != 0.01 || shot["selector"] != "main" {
+		t.Fatalf("unexpected screenshot: %#v %v", shot, err)
+	}
+	for _, args := range [][]string{
+		{"snapshot", "--unknown"}, {"snapshot", "-s"}, {"snapshot", "-d", "-1"},
+		{"screenshot", "--threshold", "0.1"}, {"screenshot", "--if-changed", "--threshold", "NaN"},
+		{"screenshot", "--if-changed", "--threshold", "1.1"}, {"screenshot", "a.png", "b.png"}, {"screenshot", "--unknown"},
+	} {
+		if _, err := ParseArgs(args); err == nil {
+			t.Fatalf("expected validation error for %v", args)
+		}
+	}
+}

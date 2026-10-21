@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.0 (2026-10-21)
+
+- Compare agent-browser releases through v0.39.1. Add snapshot deltas with
+  revisions and reconstructible line patches; `--full` refreshes the baseline.
+- Keep snapshot refs bound to surviving DOM elements. Replaced elements cannot
+  inherit old refs. Scope snapshots to the requested selector and active frame,
+  including selected roots and open shadow DOM.
+- Add `screenshot --if-changed` with an optional changed-pixel fraction threshold.
+  Isolate history by tab and capture mode; unchanged captures omit image output
+  and leave the requested output file untouched.
+- Report `outcome_unknown` with `retryable: false` after a mutating command loses
+  its daemon response. Invalid or mismatched responses receive the same treatment.
+  Existing sessions with a different daemon version also reject automatic retry.
+- Reject invalid snapshot and screenshot arguments. Correct schema safety
+  metadata for evaluation, keyboard input, frame selection, profiler operations,
+  file output, and semantic actions.
+- Upgrade CloakBrowser to 0.6.3, Playwright Core to 1.64.1, ws to 8.22.0,
+  Zod to 4.6.7, TypeScript to 7.0.2, Vitest to 5.0.5, and Go dependencies.
+  Require Node.js 22.12+ and Go 1.26.10+ for source builds.
+
 ## 0.5.1 (2026-09-14)
 
 - Install and upgrade complete checksum-verified bundles into immutable release

@@ -410,3 +410,18 @@ describe('serializeResponse', () => {
     expect(parsed.error).toBe('fail');
   });
 });
+
+
+describe('current schema metadata and validation', () => {
+  it('describes Zod 4 enums and all mutating escape hatches accurately', () => {
+    expect(dumpSchema('launch')?.releaseChannel.values).toEqual(['stable', 'preview']);
+    for (const action of ['evaluate', 'pushstate', 'keyboard_type', 'keyboard_inserttext', 'frame', 'state_save', 'profiler_start', 'profiler_stop', 'getbyrole']) {
+      expect(dumpSchema(action)?._meta.readonly, action).toBe(false);
+      expect(dumpSchema(action)?._meta.mutating, action).toBe(true);
+    }
+  });
+  it('rejects invalid screenshot thresholds and accepts delta options', () => {
+    expect(parseCommand(JSON.stringify({ id: 'x', action: 'screenshot', threshold: 2 })).ok).toBe(false);
+    expect(parseCommand(JSON.stringify({ id: 'x', action: 'snapshot', delta: true, full: true })).ok).toBe(true);
+  });
+});
