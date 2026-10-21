@@ -80,6 +80,7 @@ describe('session page safety', () => {
   it('keeps refs on surviving nodes and never retargets a replaced element', async () => {
     const first = await browser.getSnapshot({ interactive: true });
     const ref = Object.keys(first.refs)[0];
+    expect(await browser.getLocatorForRef(ref).count()).toBe(1);
     await browser.getPage().evaluate(() => document.body.append(document.createElement('p')));
     expect(Object.keys((await browser.getSnapshot({ interactive: true })).refs)).toContain(ref);
     await browser.getPage().evaluate(() => {

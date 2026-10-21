@@ -310,8 +310,8 @@ export function getSnapshotStats(
 // Enhanced snapshot (requires a Playwright Page)
 // ---------------------------------------------------------------------------
 
-// The selector engine owns refs in Playwright's isolated world. Page scripts
-// cannot enumerate or rewrite its registry.
+// Keep ref registries in selector-engine closures and remote handles rather
+// than adding properties or attributes to the page.
 await selectors.register('cloakref', () => {
   const elements = new Map<string, Element>();
   const query = (root: Node, selector: string): Element | null => {
@@ -329,7 +329,7 @@ await selectors.register('cloakref', () => {
     const element = query(root, selector);
     return element ? [element] : [];
   } };
-}, { contentScript: true });
+}, { contentScript: false });
 
 const identities = new WeakMap<Page | Frame, { generation: number; handle: JSHandle<WeakMap<Element, string>> }>();
 
@@ -354,17 +354,25 @@ export async function getEnhancedSnapshot(
     // A selected root can itself be interactive.
     locator = scope.and(page.getByRole(data.role as any, data.name !== undefined ? { name: data.name, exact: true } : undefined)).or(locator);
     if (data.nth !== undefined) locator = locator.nth(data.nth - 1);
-    const ref = await locator.evaluate((element, { ids, proposed }) => {
-      let id = ids.get(element);
-      if (!id) {
-        id = proposed;
-        ids.set(element, id);
-      }
-      return id;
-    }, { ids: identity.handle, proposed: candidate });
-    await locator.locator(`cloakref=bind:${ref}`).count();
-    refs[ref] = data;
-    tree = tree.replace(`[ref=${candidate}]`, `[stable-ref=${ref}]`);
+    const element = await locator.elementHandle();
+    if (!element) throw new Error('Element changed during snapshot. Run snapshot again.');
+    try {
+      const ref = await element.evaluate((node, { ids, proposed }) => {
+        let id = ids.get(node);
+        if (!id) {
+          id = proposed;
+          ids.set(node, id);
+        }
+        return id;
+      }, { ids: identity.handle, proposed: candidate });
+      // Bind the captured node itself, so replacement between these calls
+      // cannot transfer its ref to a fresh role/name match.
+      await element.$$eval(`cloakref=bind:${ref}`, () => null);
+      refs[ref] = data;
+      tree = tree.replace(`[ref=${candidate}]`, `[stable-ref=${ref}]`);
+    } finally {
+      await element.dispose();
+    }
   }
   return { tree: tree.replaceAll('[stable-ref=', '[ref='), refs };
 }
