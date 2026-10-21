@@ -49,7 +49,11 @@ describe('session page safety', () => {
     await expect(browser.injectMouseEvent({ action: 'click', x: 40, y: 30 })).rejects.toThrow('No streamed page');
   });
 
-  it('discovers and invokes real WebMCP tools on a secure frame', async () => {
+  it('discovers and invokes real WebMCP tools on a secure frame', async (test) => {
+    if (process.platform !== 'linux' && !await browser.getPage().evaluate(() => 'modelContext' in navigator)) {
+      expect(await executeCommand(browser, { id: 'unsupported', action: 'webmcp_list' })).toMatchObject({ ok: false, error: expect.stringContaining('WebMCP unsupported') });
+      test.skip('Installed browser does not expose WebMCP');
+    }
     await browser.getPage().evaluate(`navigator.modelContext.registerTool({name:'echo',description:'Echo input',inputSchema:{type:'object',properties:{value:{type:'string'}}},execute:async({value})=>({content:[{type:'text',text:value}]})})`);
     const list = await executeCommand(browser, { id: 'list', action: 'webmcp_list' });
     expect(list.ok).toBe(true);
@@ -61,7 +65,11 @@ describe('session page safety', () => {
     expect(JSON.parse((call.data as { output: string }).output)).toEqual({ content: [{ type: 'text', text: 'proof' }] });
   });
 
-  it('bounds non-resolving WebMCP tools and rejects unknown tools', async () => {
+  it('bounds non-resolving WebMCP tools and rejects unknown tools', async (test) => {
+    if (process.platform !== 'linux' && !await browser.getPage().evaluate(() => 'modelContext' in navigator)) {
+      expect(await executeCommand(browser, { id: 'unsupported', action: 'webmcp_list' })).toMatchObject({ ok: false, error: expect.stringContaining('WebMCP unsupported') });
+      test.skip('Installed browser does not expose WebMCP');
+    }
     await browser.getPage().evaluate(`navigator.modelContext.registerTool({name:'never',description:'Never resolves',inputSchema:{type:'object'},execute:()=>new Promise(()=>{})})`);
     const missing = await executeCommand(browser, { id: 'missing', action: 'webmcp_call', name: 'missing' });
     expect(missing.ok).toBe(false);
@@ -84,7 +92,7 @@ describe('session page safety', () => {
   });
 
   it('scopes snapshots to the selected root including shadow content', async () => {
-    await browser.getPage().setContent('<button>Outside</button><main id="scope"><div><button>Inside</button></div><x-test></x-test></main>');
+    await browser.getPage().evaluate(html => { document.body.innerHTML = html; }, '<button>Outside</button><main id="scope"><div><button>Inside</button></div><x-test></x-test></main>');
     await browser.getPage().evaluate(() => document.querySelector('x-test')!.attachShadow({ mode: 'open' }).innerHTML = '<button>Shadow</button>');
     const result = await browser.getSnapshot({ selector: '#scope', interactive: true });
     expect(result.tree).not.toContain('Outside');
