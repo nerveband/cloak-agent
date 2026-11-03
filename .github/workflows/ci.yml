@@ -61,8 +61,11 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: daemon/package-lock.json
-      - name: Install recording dependencies
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install recording dependencies and current Google Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg google-chrome-stable
+          google-chrome --version
       - name: Install daemon dependencies
         run: npm ci
         working-directory: daemon
