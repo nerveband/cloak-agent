@@ -735,8 +735,6 @@ Launch flags:
   --locale <tag>                 Locale, e.g. en-US
   --viewport <WxH>               Viewport, e.g. 1440x900
   --geoip                        Align geolocation with proxy/IP
-  --release-channel <name>       CloakBrowser stable or preview channel
-  --browser-version <version>    Pin an exact CloakBrowser binary
   --extension <path>             Load an extension (repeatable)
   --humanize                     Enable human-like mouse/keyboard/scroll behavior
   --human-preset <name>          Human behavior preset: default or careful

@@ -27,12 +27,10 @@ describe('parseCommand', () => {
     }
   });
 
-  it('accepts CloakBrowser 0.5 release controls', () => {
+  it('accepts extension paths', () => {
     const result = parseCommand(JSON.stringify({
       id: 'cb',
       action: 'launch',
-      releaseChannel: 'preview',
-      browserVersion: '150.0.7871.114.4',
       extensionPaths: ['/tmp/ext'],
     }));
     expect(result.ok).toBe(true);
@@ -414,7 +412,7 @@ describe('serializeResponse', () => {
 
 describe('current schema metadata and validation', () => {
   it('describes Zod 4 enums and all mutating escape hatches accurately', () => {
-    expect(dumpSchema('launch')?.releaseChannel.values).toEqual(['stable', 'preview']);
+    expect(dumpSchema('launch')?.humanPreset.values).toEqual(['default', 'careful']);
     for (const action of ['evaluate', 'pushstate', 'keyboard_type', 'keyboard_inserttext', 'frame', 'state_save', 'profiler_start', 'profiler_stop', 'getbyrole']) {
       expect(dumpSchema(action)?._meta.readonly, action).toBe(false);
       expect(dumpSchema(action)?._meta.mutating, action).toBe(true);

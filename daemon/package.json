@@ -14,7 +14,7 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "cloakbrowser": "0.6.3",
+    "cloakbrowser": "0.7.0",
     "playwright-core": "1.64.1",
     "pngjs": "7.0.0",
     "ws": "8.22.0",

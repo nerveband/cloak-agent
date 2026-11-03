@@ -203,7 +203,6 @@ func bootstrap(ctx context.Context, root string) error {
 	}
 	commands := []*exec.Cmd{
 		npmCommand,
-		exec.CommandContext(ctx, node, filepath.Join(root, "daemon", "node_modules", "cloakbrowser", "dist", "cli.js"), "install"),
 		exec.CommandContext(ctx, node, "--input-type=module", "-e", "await import('./dist/actions.js'); await import('./dist/protocol.js')"),
 	}
 	for _, command := range commands {

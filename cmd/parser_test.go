@@ -141,15 +141,6 @@ func TestParseArgs_TabIDsLabelsAndNetworkFilters(t *testing.T) {
 	assertEq(t, requests, "status", "2xx")
 }
 
-func TestParseArgs_LaunchLatestCloakBrowserOptions(t *testing.T) {
-	m, err := ParseArgs([]string{"launch", "--release-channel", "preview", "--browser-version", "150.0.7871.114.4", "--extension", "/tmp/ext"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertEq(t, m, "releaseChannel", "preview")
-	assertEq(t, m, "browserVersion", "150.0.7871.114.4")
-}
-
 func TestParseArgs_LaunchWithOptions(t *testing.T) {
 	m, err := ParseArgs([]string{"launch", "https://example.com", "--profile", "shop", "--proxy", "http://proxy:8080", "--timezone", "America/New_York", "--locale", "en-US", "--viewport", "1440x900", "--geoip", "--fingerprint-seed", "42", "--arg", "--disable-gpu"})
 	if err != nil {

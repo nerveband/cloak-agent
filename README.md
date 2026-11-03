@@ -23,7 +23,7 @@ Two processes, one job:
 1. **Go CLI** (this binary) — parses your command, sends JSON over a Unix socket, prints the response. Sub-millisecond overhead.
 2. **Node.js daemon** (runs in background) — manages the stealth Chromium browser via Playwright. Starts automatically on first command, stays alive between commands.
 
-The daemon uses CloakBrowser's patched Chromium binary. Fingerprints (GPU, screen size, hardware profile, timezone) are randomized at the binary level — no JavaScript injection that detection scripts can catch.
+The daemon drives the installed Google Chrome with its sandbox on, through CloakBrowser's Playwright wrapper. It never downloads a browser, and it refuses any Chromium older than `156.0.8078.73` (the fix for CVE-2026-118306, a sandbox escape, and its companion CVEs). To use CloakBrowser's source-patched stealth Chromium, pass `--executable-path` (or `CLOAK_AGENT_EXECUTABLE_PATH`) to a CloakBrowser build at or above that version; its fingerprint flags (GPU, screen size, hardware profile, timezone) then apply at the binary level. Stock Chrome ignores them.
 
 ## Install
 
@@ -41,7 +41,7 @@ cd cloak-agent
 make build
 ```
 
-This builds the Go binary (`./cloak-agent`) and compiles the daemon TypeScript. The `install` flow below also installs daemon dependencies and checks the CloakBrowser runtime.
+This builds the Go binary (`./cloak-agent`) and compiles the daemon TypeScript. The `install` flow below also installs daemon dependencies.
 
 ### Install globally
 
@@ -51,7 +51,7 @@ make install
 ./cloak-agent install
 ```
 
-Source installs copy the binary and daemon to `~/.cloak-agent/`, install daemon production dependencies, run `cloakbrowser install`, and expose `cloak-agent` through an existing writable PATH directory when possible. If no writable PATH directory exists, the installer links to `~/.local/bin` and prints the PATH line only when needed. Installed-layout installs run the same daemon/bootstrap steps in place.
+Source installs copy the binary and daemon to `~/.cloak-agent/`, install daemon production dependencies, and expose `cloak-agent` through an existing writable PATH directory when possible. If no writable PATH directory exists, the installer links to `~/.local/bin` and prints the PATH line only when needed. Installed-layout installs run the same daemon/bootstrap steps in place. No browser is downloaded; install Google Chrome separately.
 
 Release archives bundle the Go CLI with the compiled daemon and its locked npm
 manifests. Keep the executable and `daemon/` directory together, then run
@@ -62,7 +62,7 @@ and run:
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
-This installs the daemon dependencies and CloakBrowser runtime in the extracted
+This installs the daemon dependencies in the extracted
 layout. Windows CI verifies the native Go build and unit-level daemon behavior.
 Browser execution still requires an explicit native Windows runtime test; a Go
 cross-build is not a native test.
@@ -79,17 +79,15 @@ profiles and config roots removed as well.
 
 Current runtime baseline (locked in `daemon/package-lock.json`):
 
-- `cloakbrowser` `0.6.3` for the patched Chromium runtime and stable/preview release channels.
+- `cloakbrowser` `0.7.0` for the launch wrapper (stealth flags, humanize, geoip). Its binary download is disabled.
 - `playwright-core` `1.64.1` for browser control.
 - `ws` `8.22.0` for the optional CDP-backed local viewport stream server.
 
-Keyless installs use Chromium `146.0.7680.177.5` on Linux x64 and
-`145.0.7632.109.2` on macOS. A CloakBrowser key selects the current licensed
-build. The upstream stable line is platform-specific: Chromium `151.0.7922.108.6`
-on Linux/Windows and `151.0.7922.108.3` on macOS at this review.
-The latest line is also available with a free GitHub-sign-in key, limited to
-one concurrent session. Invalid supplied keys fail rather than silently falling
-back. WebMCP is capability-dependent, not license-dependent.
+As of 2026-11-03 no CloakBrowser build meets the `156.0.8078.73` floor: the
+keyless macOS build is Chromium `145.0.7632.109.2`, Pro stable is
+`155.0.8059.39`, and the Pro preview channel is `156.0.8078.47`. cloak-agent
+therefore runs on Google Chrome until upstream ships a patched build.
+WebMCP is capability-dependent, not license-dependent.
 
 ## Quick start
 
@@ -380,9 +378,9 @@ Other synchronized Agent Browser ergonomics include `goto`/`navigate` aliases,
 `storage session`, `frame`, `dialog status`, `pushstate`, and
 `profiler start|stop`.
 
-CloakBrowser 0.5 launch controls are available through
-`launch --release-channel stable|preview`, `--browser-version`, and repeatable
-`--extension` flags.
+Extensions load through repeatable `launch --extension` flags. The
+CloakBrowser download controls (`--release-channel`, `--browser-version`) are
+removed; select a browser with `--executable-path`.
 
 ## For AI agents
 
@@ -485,7 +483,7 @@ JSON errors include `code`, `message`, `hint`, and `retryable`.
 - Daemon startup failure: run `cloak-agent --output json daemon status` and `cloak-agent --output json daemon logs` to inspect the socket path, pid file, and latest log output.
 - Install/runtime mismatch: run `cloak-agent --output json doctor`.
 - Runtime uncertainty: `doctor` includes daemon runtime proof when available, including active page, tabs, and context count.
-- CloakBrowser missing: run `cloak-agent install`; source installs and installed-layout installs both run `npx cloakbrowser install`.
+- Browser missing or refused: install or update Google Chrome, or pass `--executable-path` to a Chromium build at or above `156.0.8078.73`.
 - Working from a source checkout: the repo-built `./cloak-agent` now resolves `daemon/dist/daemon.js` from the checkout itself, so smoke tests and local development use the current code instead of an older installed daemon copy.
 - Viewport stream clients can read the local WebSocket port from `cloak-agent --output json doctor` (`streamPort`) or `~/.cloak-agent/<session>.stream`.
 
@@ -575,7 +573,7 @@ More detail: [docs/architecture.md](docs/architecture.md)
 make test
 ```
 
-This runs both Go tests and daemon TypeScript tests, including integration tests with a real CloakBrowser launch.
+This runs both Go tests and daemon TypeScript tests, including integration tests with a real Google Chrome launch.
 
 ## Project structure
 
