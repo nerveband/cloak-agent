@@ -217,8 +217,8 @@ cloak-agent webmcp call tool_name '{"value":"example"}' --timeout 10000
 cloak-agent webmcp list --frame '#tool-frame'
 ```
 
-Opt-in flags expose experimental browser APIs where supported. Discovery and
-execution work on the tested keyless Chromium 146. Secure contexts are required.
+Opt-in flags expose experimental browser APIs where supported. Stock Google
+Chrome 156 does not expose WebMCP, so `webmcp` commands report it unsupported there. Secure contexts are required.
 Calls target the active frame unless `--frame main` or an iframe selector is given.
 Inputs are limited to 1 MiB and outputs to 2 MiB. Timeout requests cancellation,
 but a tool may already have performed side effects. Tool metadata/results are
