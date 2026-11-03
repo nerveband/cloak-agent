@@ -3,6 +3,7 @@
 import type { Browser, BrowserContext, BrowserContextOptions, CDPSession, Page, Frame, Dialog } from 'playwright-core';
 import { launchContext, launchPersistentContext } from 'cloakbrowser';
 import { buildStealthArgs, ensureProfileDir } from './stealth.js';
+import { assertPatchedChromium, fingerprintSeedArg, resolveBrowserExecutable } from './browser-runtime.js';
 import { getEnhancedSnapshot, type RefData, type SnapshotOptions } from './snapshot.js';
 import { toAIFriendlyError } from './errors.js';
 import type { StealthOptions } from './stealth.js';
@@ -23,14 +24,12 @@ export interface BrowserLaunchOptions extends StealthOptions {
   userAgent?: string;
   proxy?: string | { server: string; bypass?: string; username?: string; password?: string };
   args?: string[];
-  executablePath?: string;
   storageState?: string;
   ignoreHTTPSErrors?: boolean;
   locale?: string;
   timezone?: string;
   geoip?: boolean;
-  browserVersion?: string;
-  releaseChannel?: 'stable' | 'preview';
+  executablePath?: string;
   extensionPaths?: string[];
   humanize?: boolean;
   humanPreset?: 'default' | 'careful';
@@ -165,7 +164,13 @@ export class BrowserManager {
     let preparedCATrust: PreparedCATrust | null = null;
     try {
       preparedCATrust = options.caCert ? await prepareCATrust(options.caCert) : null;
+      const executablePath = resolveBrowserExecutable(options.executablePath);
+      assertPatchedChromium(executablePath);
+      const userDataDir = options.profile ? ensureProfileDir(options.profile) : undefined;
       const args = buildStealthArgs(options);
+      if (!args.some(arg => arg.split('=')[0] === '--fingerprint')) {
+        args.unshift(fingerprintSeedArg(userDataDir));
+      }
       if (options.webmcp) {
         const index = args.findIndex(arg => arg.startsWith('--enable-features='));
         const features = new Set(index < 0 ? [] : args[index].slice('--enable-features='.length).split(','));
@@ -188,29 +193,29 @@ export class BrowserManager {
           }
         : undefined;
 
+      // stealthArgs: false drops CloakBrowser's default --no-sandbox; buildStealthArgs
+      // and the seed above supply the fingerprint flags instead. CLOAKBROWSER_BINARY_PATH
+      // stops CloakBrowser from downloading its own (unpatched) Chromium.
+      process.env.CLOAKBROWSER_BINARY_PATH = executablePath;
       const baseOptions: Record<string, unknown> = {
         headless: options.headless ?? true,
         args,
+        stealthArgs: false,
         locale: options.locale,
         timezone: options.timezone,
         userAgent: options.userAgent,
         viewport,
         proxy: options.proxy,
         geoip: options.geoip,
-        browserVersion: options.browserVersion,
-        releaseChannel: options.releaseChannel,
         extensionPaths: options.extensionPaths,
         humanize: options.humanize,
         humanPreset: options.humanPreset,
         humanConfig: options.humanConfig,
         contextOptions,
-        launchOptions: options.executablePath || launchEnv
-          ? { executablePath: options.executablePath, env: launchEnv }
-          : undefined,
+        launchOptions: { executablePath, chromiumSandbox: true, ...(launchEnv ? { env: launchEnv } : {}) },
       };
 
-      if (options.profile) {
-        const userDataDir = ensureProfileDir(options.profile);
+      if (userDataDir) {
         this.isPersistentContext = true;
         const context = await launchPersistentContext({
           ...baseOptions,

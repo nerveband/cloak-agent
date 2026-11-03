@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Security (CVE-2026-118306, -118331, -118344, -118348): launch the installed
+  Google Chrome, or `--executable-path`, with the Chromium sandbox on, and
+  refuse any browser older than Chromium 156.0.8078.73. CloakBrowser's
+  `--no-sandbox` default is dropped; cloak-agent supplies the fingerprint seed
+  itself and keeps the per-profile `.cloakbrowser-seed`.
+- Never download a browser: `cloak-agent install` no longer runs
+  `cloakbrowser install`, and the `launch --release-channel` and
+  `--browser-version` download controls are removed. No CloakBrowser build met
+  the floor at release (keyless macOS 145, Pro 155, preview 156.0.8078.47).
+- Upgrade the CloakBrowser wrapper to 0.7.0.
+
 ## 0.6.0 (2026-10-21)
 
 - Compare agent-browser releases through v0.39.1. Add snapshot deltas with

@@ -52,8 +52,6 @@ const launch = z.object({
   url: z.string().optional(),
   // CloakBrowser stealth options
   geoip: z.boolean().optional(),
-  browserVersion: z.string().optional(),
-  releaseChannel: z.enum(['stable', 'preview']).optional(),
   extensionPaths: z.array(z.string()).optional(),
   fingerprintSeed: z.number().optional(),
   timezone: z.string().optional(),

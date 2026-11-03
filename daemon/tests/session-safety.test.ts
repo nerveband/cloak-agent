@@ -50,7 +50,7 @@ describe('session page safety', () => {
   });
 
   it('discovers and invokes real WebMCP tools on a secure frame', async (test) => {
-    if (process.platform !== 'linux' && !await browser.getPage().evaluate(() => 'modelContext' in navigator)) {
+    if (!await browser.getPage().evaluate(() => 'modelContext' in navigator)) {
       expect(await executeCommand(browser, { id: 'unsupported', action: 'webmcp_list' })).toMatchObject({ ok: false, error: expect.stringContaining('WebMCP unsupported') });
       test.skip('Installed browser does not expose WebMCP');
     }
@@ -66,7 +66,7 @@ describe('session page safety', () => {
   });
 
   it('bounds non-resolving WebMCP tools and rejects unknown tools', async (test) => {
-    if (process.platform !== 'linux' && !await browser.getPage().evaluate(() => 'modelContext' in navigator)) {
+    if (!await browser.getPage().evaluate(() => 'modelContext' in navigator)) {
       expect(await executeCommand(browser, { id: 'unsupported', action: 'webmcp_list' })).toMatchObject({ ok: false, error: expect.stringContaining('WebMCP unsupported') });
       test.skip('Installed browser does not expose WebMCP');
     }
