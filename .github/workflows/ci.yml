@@ -64,7 +64,8 @@ jobs:
       - name: Install recording dependencies and current Google Chrome
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg google-chrome-stable
+          curl -fsSLo /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y ffmpeg /tmp/chrome.deb
           google-chrome --version
       - name: Install daemon dependencies
         run: npm ci
